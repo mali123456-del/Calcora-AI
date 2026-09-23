@@ -21,10 +21,22 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
-  // AI Math Assistant endpoint
+  // AI Math Assistant & Tutor endpoint
   app.post('/api/ai/math', async (req, res) => {
     try {
-      const { prompt, conversation = [], currentExpression, currentResult } = req.body;
+      const {
+        prompt,
+        conversation = [],
+        currentExpression,
+        currentResult,
+        tutorMode = 'assistant',
+        learningObjective = 'concept',
+        difficulty = 'intermediate',
+        topic = 'Algebra',
+        hintLevel = 1,
+        socraticMode = false,
+        userStep,
+      } = req.body;
 
       if (!prompt || typeof prompt !== 'string') {
         return res.status(400).json({ error: 'Prompt is required' });
@@ -36,10 +48,10 @@ async function startServer() {
         return res.json({
           success: true,
           isOfflineFallback: true,
-          answer: `AI Math Assistant is ready. To enable live Gemini responses, ensure your GEMINI_API_KEY is configured in Settings > Secrets.\n\nQuery received: "${prompt}".\n\nTip: You can use the deterministic calculator, equation solver, unit converter, and financial tools directly!`,
+          answer: `AI Math Assistant & Tutor is ready. To enable live Gemini responses, ensure your GEMINI_API_KEY is configured in Settings > Secrets.\n\nQuery received: "${prompt}".\n\nTip: You can use the deterministic calculator, equation solver, unit converter, and tutoring tools directly!`,
           steps: [
             'Input parsed safely.',
-            'Deterministic calculations remain 100% active and precise.'
+            'Deterministic calculations remain 100% active and authoritative.'
           ]
         });
       }
@@ -53,23 +65,43 @@ async function startServer() {
         },
       });
 
-      const systemInstruction = `You are the AI Mathematical Assistant inside a precision digital scientific calculator.
-Your job is to assist with mathematical concepts, solve equations, explain calculations step-by-step, explain formulas, and translate natural language math problems into precise mathematical expressions.
+      const tutorModeGuidance = tutorMode === 'tutor'
+        ? `TUTORING MODE ACTIVE:
+- Pedagogical Objective: ${learningObjective}
+- Current Topic: ${topic}
+- Target Difficulty: ${difficulty} (Adjust vocabulary, mathematical depth, and proof rigor to match this level)
+- Progressive Hint Level: ${hintLevel} of 5.
+  * Level 1: Conceptual direction only (do not give formulas or answers).
+  * Level 2: State the relevant formula, theorem, or identity.
+  * Level 3: Show how to substitute known quantities or isolate terms.
+  * Level 4: Give the immediate next algebraic step.
+  * Level 5: Reveal the complete solution with full derivation.
+- Socratic Questioning: ${socraticMode ? 'ENABLED. Ask guided, probing questions to prompt the learner to discover the next step themselves rather than solving it upfront.' : 'DISABLED.'}
+- If the user submitted a step to check: "${userStep || 'None'}", analyze whether it is mathematically equivalent, a sign error, or an invalid transformation.`
+        : tutorMode === 'solver-review'
+        ? `SOLVER REVIEW MODE ACTIVE:
+Conduct an in-depth mathematical audit of the problem. Break down the proof step-by-step, verify edge cases, domain restrictions, assumptions, and state all applied axioms.`
+        : `STANDARD ASSISTANT MODE ACTIVE: Provide direct, concise answers with step-by-step proofs and LaTeX formulas.`;
+
+      const systemInstruction = `You are the AI Mathematical Assistant & Interactive Tutor inside a precision digital scientific calculator.
+You are explaining and tutoring around a deterministic mathematical result. Never alter the verified result.
+The deterministic calculator engine is the authoritative source for numerical correctness.
+
+${tutorModeGuidance}
 
 Rules:
-1. Provide concise, clear, and mathematically accurate explanations.
+1. Provide mathematically rigorous, clear, and encouraging explanations.
 2. Structure step-by-step derivations clearly with numbered steps.
 3. Whenever presenting mathematical formulas, variables, and expressions in "answer" and "steps", format them using LaTeX math syntax enclosed in dollar signs for inline math (e.g. $x^2 + 5x + 6 = 0$, $\\sqrt{b^2 - 4ac}$, $\\frac{a}{b}$) or double dollar signs for display equations ($$...$$).
 4. Whenever extracting an expression to calculate, provide it in the "expression" field in calculator format so the deterministic engine can evaluate it (e.g. "15 * 850 / 100").
-5. Keep tone professional, encouraging, and mathematically rigorous.
-6. If asked about formulas (e.g. Pythagorean theorem, compound interest, quadratic formula), state the formula clearly in LaTeX ($a^2 + b^2 = c^2$) and give a brief example.
-7. Current calculator context if relevant:
+5. If in Tutor Mode with Hint Level < 5, do NOT immediately reveal the final answer; guide the user progressively!
+6. Current calculator context if relevant:
    Expression: ${currentExpression || 'None'}
    Result: ${currentResult || 'None'}
 
 Return your response in clean JSON matching:
 {
-  "answer": "Clear summary answer to the user's query with LaTeX math formatting",
+  "answer": "Clear response with LaTeX math formatting",
   "expression": "Optional single mathematical expression if applicable (e.g. 15 * 850 / 100 or 2^8), or null",
   "steps": ["Step 1: ... with LaTeX math", "Step 2: ... with LaTeX math"],
   "formula": "Optional standard formula used in LaTeX (e.g. $a^2 + b^2 = c^2$), or null"

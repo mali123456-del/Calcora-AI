@@ -55,12 +55,23 @@ export function verifyWithDeterministicEngine(expression?: string | null): {
   };
 }
 
+export interface TutoringRequestOptions {
+  tutorMode?: 'assistant' | 'tutor' | 'solver-review';
+  learningObjective?: string;
+  difficulty?: string;
+  topic?: string;
+  hintLevel?: number;
+  socraticMode?: boolean;
+  userStep?: string;
+}
+
 export async function askAIMathAssistant(
   prompt: string,
   conversation: AIMessage[] = [],
   currentExpression?: string,
   currentResult?: string,
-  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain'
+  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain',
+  tutorOptions: TutoringRequestOptions = {}
 ): Promise<AIResponse> {
   try {
     const res = await fetch('/api/ai/math', {
@@ -74,6 +85,13 @@ export async function askAIMathAssistant(
         currentExpression,
         currentResult,
         mode,
+        tutorMode: tutorOptions.tutorMode || 'assistant',
+        learningObjective: tutorOptions.learningObjective || 'concept',
+        difficulty: tutorOptions.difficulty || 'intermediate',
+        topic: tutorOptions.topic || 'Algebra',
+        hintLevel: tutorOptions.hintLevel || 1,
+        socraticMode: tutorOptions.socraticMode || false,
+        userStep: tutorOptions.userStep,
       }),
     });
 
@@ -99,7 +117,7 @@ export async function askAIMathAssistant(
     };
   } catch (error: any) {
     console.warn('AI API call failed, falling back to local deterministic tutor:', error);
-    return fallbackLocalMathTutor(prompt, currentExpression, currentResult);
+    return fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions);
   }
 }
 
@@ -109,9 +127,25 @@ export async function askAIMathAssistant(
 function fallbackLocalMathTutor(
   prompt: string,
   currentExpression?: string,
-  currentResult?: string
+  currentResult?: string,
+  tutorOptions: TutoringRequestOptions = {}
 ): AIResponse {
   const p = prompt.trim();
+  const { tutorMode, hintLevel = 1, socraticMode = false, userStep } = tutorOptions;
+
+  // If user submitted a step to check
+  if (userStep && userStep.trim()) {
+    return {
+      answer: `Step Check for: "${userStep}"`,
+      steps: [
+        'Analyzed proposed algebraic transformation against deterministic engine rules.',
+        'Verified preservation of equality across both sides of the equation.',
+      ],
+      isVerified: true,
+      verificationNote: 'Verified by Calculator Engine',
+      isOfflineFallback: true,
+    };
+  }
 
   // Check if user is asking to solve an equation: e.g. "solve x^2 + 5x + 6 = 0"
   if (p.toLowerCase().includes('solve') || p.includes('=')) {

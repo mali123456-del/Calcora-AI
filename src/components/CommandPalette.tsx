@@ -21,8 +21,15 @@ import {
   Mic,
   CornerDownLeft,
   X,
+  GraduationCap,
+  Brain,
+  HelpCircle,
+  Timer,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
 import { ActiveTab, AngleMode, ThemeMode } from '../types';
+import { saveTutorSettings } from '../utils/aiTutorStorage';
 
 export interface CommandItem {
   id: string;
@@ -167,6 +174,116 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: Sparkles,
       action: () => setActiveTab('ai'),
       shortcut: 'A',
+    },
+    {
+      id: 'cmd-tutor-mode',
+      title: 'Tutor Mode: Socratic Guidance',
+      subtitle: 'Switch AI Assistant to interactive Tutor Mode 2.0 with progressive hints',
+      category: 'AI',
+      icon: GraduationCap,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-socratic-mode',
+      title: 'Socratic Tutoring: Guiding Questions',
+      subtitle: 'Toggle Socratic guidance: AI asks targeted questions rather than solving upfront',
+      category: 'AI',
+      icon: Brain,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor', socraticMode: true });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-give-hint',
+      title: 'Give me a Hint (Progressive)',
+      subtitle: 'Request progressive hint level (1: Concept, 2: Formula, 3: Substitution, 4: Next Step, 5: Solution)',
+      category: 'AI',
+      icon: HelpCircle,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-next-hint',
+      title: 'Next Stronger Hint',
+      subtitle: 'Advance to the next progressive hint level for the active problem',
+      category: 'AI',
+      icon: HelpCircle,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-show-solution',
+      title: 'Show Full Solution Proof',
+      subtitle: 'Reveal the complete step-by-step mathematical derivation and proof',
+      category: 'AI',
+      icon: CheckCircle,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-check-step',
+      title: 'Check My Step (Deterministic Verification)',
+      subtitle: 'Verify if your intermediate step is mathematically equivalent or contains sign errors',
+      category: 'AI',
+      icon: CheckCircle2,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-generate-practice',
+      title: 'Generate Practice Problems',
+      subtitle: 'Generate topic-aligned validated problems based on your learning objective and difficulty',
+      category: 'AI',
+      icon: BookOpen,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor', learningObjective: 'practice' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-start-practice',
+      title: 'Start Practice Session',
+      subtitle: 'Launch interactive multi-problem practice session with live scoring and step validation',
+      category: 'AI',
+      icon: Award,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-review-mistakes',
+      title: 'Review Tutoring Mistakes',
+      subtitle: 'Open structured review of previous mistakes and practice similar problems',
+      category: 'AI',
+      icon: AlertCircle,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor', learningObjective: 'review-mistakes' });
+        setActiveTab('ai');
+      },
+    },
+    {
+      id: 'cmd-exam-mode',
+      title: 'Exam Mode: Timed Challenge',
+      subtitle: 'Timed challenge without upfront hints, problem progression tracking, and final evaluation',
+      category: 'AI',
+      icon: Timer,
+      action: () => {
+        saveTutorSettings({ mode: 'tutor', examMode: true });
+        setActiveTab('ai');
+      },
     },
     // System Actions
     {

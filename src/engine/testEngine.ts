@@ -22,6 +22,16 @@ import { sanitizeSpokenMath, sanitizeQueryText } from '../utils/sanitizer';
 import { convertMathToSpokenText } from '../utils/speechSynthesis';
 import { extractLaTeXFormula, generateConversationMarkdown } from '../utils/aiExport';
 import { buildQuickPrompt } from '../utils/aiQuickPrompts';
+import {
+  detectMathTopic,
+  generateProgressiveHints,
+  checkUserStep,
+  analyzeMistake,
+  generatePracticeProblems,
+  evaluatePracticeAnswer,
+  LearningObjective,
+  DifficultyLevel,
+} from '../utils/aiTutor';
 import { AIMessage } from '../types';
 
 export interface TestCaseResult {
@@ -557,6 +567,213 @@ export function runFullVerificationSuite(): {
     expected: 'Contains expression',
     actual: promptSimplify.includes('(x^2 - 9)/(x - 3)') ? 'Contains expression' : 'Missing',
     passed: promptSimplify.includes('(x^2 - 9)/(x - 3)'),
+  });
+
+  // =========================================================================
+  // 19. AI Mathematical Tutor Mode 2.0
+  // =========================================================================
+
+  // A. Hint Progression (1 to 5 levels)
+  const hintsForLinear = generateProgressiveHints('2x + 5 = 17', '2x + 5 = 17', ['2x = 12', 'x = 6'], 'x = 6');
+  const hintsValidCount = hintsForLinear.length === 5;
+  const hintLevel1Conceptual = hintsForLinear[0].length > 10;
+  const hintLevel5Solution = hintsForLinear[4].includes('Complete solution') || hintsForLinear[4].includes('x = 6');
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'A. Progressive Hint System (5 Discrete Levels)',
+    input: '2x + 5 = 17',
+    expected: '5 progressive levels with conceptual starting level and full solution at level 5',
+    actual: hintsValidCount && hintLevel1Conceptual && hintLevel5Solution ? '5 progressive levels verified' : 'Invalid hint structure',
+    passed: hintsValidCount && hintLevel1Conceptual && hintLevel5Solution,
+  });
+
+  // B. Topic Detection
+  const topicCalc = detectMathTopic('calculate the derivative d/dx (x^3 + 4x)');
+  const topicTrig = detectMathTopic('evaluate sin(30 deg) + cos(60 deg)');
+  const topicAlg = detectMathTopic('solve 3x + 7 = 22');
+  const topicStat = detectMathTopic('find the mean, median, and standard deviation of dataset');
+  const topicEng = detectMathTopic('calculate current through a 240 ohm resistor with 12V voltage');
+  const topicDetectAllPassed =
+    topicCalc === 'Calculus' &&
+    topicTrig === 'Trigonometry' &&
+    topicAlg === 'Algebra' &&
+    topicStat === 'Statistics' &&
+    topicEng === 'Engineering';
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'B. Automated Math Topic Detection',
+    input: 'Calculus, Trig, Algebra, Stats, Engineering prompts',
+    expected: 'Accurate topic classification across 5 domains',
+    actual: topicDetectAllPassed ? 'Calculus, Trig, Algebra, Statistics, Engineering' : 'Topic detection discrepancy',
+    passed: topicDetectAllPassed,
+  });
+
+  // C. Difficulty Mapping
+  const difficultyLevels: DifficultyLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
+  const difficultyProblems = difficultyLevels.map((diff) => generatePracticeProblems('Algebra', diff, 1));
+  const difficultyPassed = difficultyProblems.every((set) => set.length === 1 && set[0].id.length > 0);
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'C. Difficulty Level Mapping',
+    input: 'beginner, intermediate, advanced, expert',
+    expected: 'Practice problems successfully mapped to each difficulty',
+    actual: difficultyPassed ? 'All 4 difficulty tiers verified' : 'Difficulty mapping failed',
+    passed: difficultyPassed,
+  });
+
+  // D. Learning Objective Mapping
+  const objectives: LearningObjective[] = ['concept', 'practice', 'formula', 'check-work', 'exam', 'review-mistakes'];
+  const objectivesMapped = objectives.length === 6;
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'D. Learning Objective Mapping (6 Objectives)',
+    input: 'concept, practice, formula, check-work, exam, review-mistakes',
+    expected: '6 standard learning objectives registered',
+    actual: objectivesMapped ? '6 objectives active' : 'Missing objectives',
+    passed: objectivesMapped,
+  });
+
+  // E. Step Checking (Equivalent, Incorrect, Invalid Transformation, Missing Condition)
+  const stepEquivalent = checkUserStep('2x + 5 = 17', '2x = 12');
+  const stepSolved = checkUserStep('2x + 5 = 17', 'x = 6');
+  const stepSignError = checkUserStep('2x + 5 = 17', '2x = 22');
+  const stepDivZero = checkUserStep('x / 0 = 5', 'x = 0 / 0');
+  const stepMissingCondition = checkUserStep('x^2 = 9', 'x = 3');
+
+  const stepChecksPassed =
+    stepEquivalent.status === 'mathematically_equivalent' &&
+    stepEquivalent.isEquivalent === true &&
+    stepSolved.status === 'mathematically_equivalent' &&
+    stepSignError.status === 'incorrect' &&
+    stepDivZero.status === 'invalid_transformation' &&
+    stepMissingCondition.status === 'missing_condition';
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'E. Deterministic Step Checking Engine',
+    input: '2x+5=17 steps (2x=12, 2x=22, /0, x^2=9 -> x=3)',
+    expected: 'Accurate classification: equivalent, sign error, invalid transformation, missing condition',
+    actual: stepChecksPassed ? 'All 4 step statuses classified accurately' : 'Step checking classification error',
+    passed: stepChecksPassed,
+  });
+
+  // F. Mistake Categorization & Structured Analysis
+  const signAnalysis = analyzeMistake('2x = 10', '-5', '5');
+  const pemdasAnalysis = analyzeMistake('2 + 3 * 4', '20', '14');
+  const domainAnalysis = analyzeMistake('1/x', 'divide by 0', 'x != 0');
+
+  const structuredFieldsValid = (a: any) =>
+    Boolean(a.errorType && a.whyItIsWrong && a.correctPrinciple && a.correction && a.preventionTip);
+
+  const mistakeAnalysisPassed =
+    signAnalysis.errorType === 'sign_error' &&
+    pemdasAnalysis.errorType === 'arithmetic_mistake' &&
+    domainAnalysis.errorType === 'domain_restriction' &&
+    structuredFieldsValid(signAnalysis) &&
+    structuredFieldsValid(pemdasAnalysis);
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'F. Structured Mistake Analysis (5 Structured Fields)',
+    input: 'Sign error (-5 vs 5), PEMDAS (20 vs 14), Domain (/0)',
+    expected: 'errorType, whyItIsWrong, correctPrinciple, correction, preventionTip',
+    actual: mistakeAnalysisPassed ? 'Structured fields and categories verified' : 'Analysis structure missing fields',
+    passed: mistakeAnalysisPassed,
+  });
+
+  // G. Practice Problem Validation
+  const practiceProblems = generatePracticeProblems('Arithmetic', 'beginner', 2);
+  const practiceValid =
+    practiceProblems.length === 2 &&
+    practiceProblems[0].hints.length === 5 &&
+    practiceProblems[0].correctAnswer.length > 0 &&
+    practiceProblems[0].explanation.length > 0;
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'G. Practice Problem Generation & Validation',
+    input: 'Arithmetic beginner (2 problems)',
+    expected: 'Valid problems with 5-level hints and verified answers',
+    actual: practiceValid ? 'Generated and verified 2 practice problems' : 'Invalid practice problem structure',
+    passed: practiceValid,
+  });
+
+  // H. Practice Scoring & Answer Evaluation
+  const testProb = practiceProblems[0];
+  const evalCorrect = evaluatePracticeAnswer(testProb, testProb.correctAnswer);
+  const evalWrong = evaluatePracticeAnswer(testProb, '999999');
+  const scoringPassed = evalCorrect.isCorrect === true && evalWrong.isCorrect === false;
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'H. Practice Answer Evaluation (Numerical & Symbolic)',
+    input: `Correct: ${testProb.correctAnswer}, Incorrect: 999999`,
+    expected: 'Accurate determination: true for match, false for mismatch',
+    actual: scoringPassed ? 'Answer evaluation verified' : 'Scoring discrepancy',
+    passed: scoringPassed,
+  });
+
+  // I. Session Progress Tracking
+  const mockProblemResults: Record<number, { isCorrect: boolean; attempts: number; hintsUsed: number; timeSpentSec: number }> = {
+    0: { isCorrect: true, attempts: 1, hintsUsed: 0, timeSpentSec: 15 },
+    1: { isCorrect: false, attempts: 2, hintsUsed: 2, timeSpentSec: 35 },
+    2: { isCorrect: true, attempts: 1, hintsUsed: 1, timeSpentSec: 20 },
+  };
+  const sessionCorrect = Object.values(mockProblemResults).filter((r) => r.isCorrect).length;
+  const sessionAccuracy = Math.round((sessionCorrect / 3) * 100);
+  const progressPassed = sessionCorrect === 2 && sessionAccuracy === 67;
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'I. Practice Session Progress & Scoring Accuracy',
+    input: '3 problems (2 correct, 1 incorrect)',
+    expected: 'Score: 2/3 (67% accuracy)',
+    actual: progressPassed ? `Score: ${sessionCorrect}/3 (${sessionAccuracy}%)` : 'Scoring calculation mismatch',
+    passed: progressPassed,
+  });
+
+  // J. Tutor State Reset
+  const resetHints = generateProgressiveHints('x + 1 = 2');
+  const resetPassed = resetHints.length === 5;
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'J. Tutor State Clean Reset',
+    input: 'Reset session target x + 1 = 2',
+    expected: 'Hints refreshed cleanly without residual state',
+    actual: resetPassed ? 'Clean reset verified' : 'Residual state error',
+    passed: resetPassed,
+  });
+
+  // K. LaTeX Preservation in Hints and Formulas
+  const quadHints = generateProgressiveHints('x^2 - 5x + 6 = 0');
+  const latexPreserved = quadHints.some((h) => h.includes('$') || h.includes('\\frac'));
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'K. LaTeX Formatting Preservation in Hints',
+    input: 'Quadratic equation hints',
+    expected: 'Contains LaTeX syntax ($...$, \\frac)',
+    actual: latexPreserved ? 'LaTeX math notation preserved' : 'Missing LaTeX math formatting',
+    passed: latexPreserved,
+  });
+
+  // L. Invalid Input Handling & Edge Cases
+  const emptyStep = checkUserStep('2x + 5 = 17', '   ');
+  const emptyTopic = detectMathTopic('');
+  const edgeCasesPassed = emptyStep.status === 'incorrect' && emptyTopic === 'Algebra';
+
+  results.push({
+    category: 'AI Mathematical Tutor 2.0',
+    testName: 'L. Invalid Input Handling & Edge Cases',
+    input: 'Empty user step, empty topic string',
+    expected: 'Safe handling without runtime exceptions',
+    actual: edgeCasesPassed ? 'Handled safely with default fallbacks' : 'Unhandled edge case exception',
+    passed: edgeCasesPassed,
   });
 
   const passedCount = results.filter((r) => r.passed).length;

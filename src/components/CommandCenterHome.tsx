@@ -17,8 +17,13 @@ import {
   ArrowRight,
   FolderKanban,
   CheckCircle2,
+  GraduationCap,
+  Brain,
+  Flame,
+  AlertCircle,
 } from 'lucide-react';
 import { ActiveTab, HistoryItem } from '../types';
+import { loadTutorSettings, loadTutorStats, loadSavedMistakes } from '../utils/aiTutorStorage';
 
 interface CommandCenterHomeProps {
   onNavigateTab: (tab: ActiveTab) => void;
@@ -243,6 +248,75 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
           })}
         </div>
       </div>
+
+      {/* AI Mathematical Tutor 2.0 Dashboard Card */}
+      {(() => {
+        const tutorSettings = loadTutorSettings();
+        const tutorStats = loadTutorStats();
+        const mistakes = loadSavedMistakes();
+
+        return (
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-950/40 via-indigo-950/30 to-slate-900 border border-purple-500/30 shadow-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-300 flex items-center justify-center">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white">
+                      AI Mathematical Tutor 2.0
+                    </h3>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      Socratic Guided
+                    </span>
+                    {tutorStats.streakDays > 0 && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5">
+                        <Flame className="w-3 h-3 text-amber-400" />
+                        {tutorStats.streakDays}d Streak
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-purple-300/80">
+                    Active goal: <strong className="text-white capitalize">{tutorSettings.learningObjective.replace('-', ' ')}</strong> • Target: <strong className="text-cyan-300 capitalize">{tutorSettings.topicOverride || 'Algebra'} ({tutorSettings.difficulty})</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('ai')}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                >
+                  <span>Resume Tutor Session</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
+                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Learning Objective</span>
+                <span className="text-slate-200 font-semibold mt-0.5 block capitalize">{tutorSettings.learningObjective.replace('-', ' ')}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
+                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Current Topic</span>
+                <span className="text-cyan-300 font-semibold mt-0.5 block">{tutorSettings.topicOverride || 'Algebra'}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
+                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Problems Solved</span>
+                <span className="text-emerald-300 font-semibold mt-0.5 block">{tutorStats.totalCorrect} / {tutorStats.totalProblemsAttempted || 0}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
+                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Recorded Mistakes</span>
+                <span className="text-amber-300 font-semibold mt-0.5 block">{mistakes.length} items to review</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* AI Tutor Quick Actions */}
       <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-50/50 dark:from-purple-950/20 via-indigo-50/30 dark:via-indigo-950/20 to-transparent border border-purple-200/60 dark:border-purple-500/20 space-y-4">
