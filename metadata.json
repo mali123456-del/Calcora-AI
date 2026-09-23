@@ -1,0 +1,6 @@
+{
+  "name": "Digital AI Scientific Calculator",
+  "description": "Production-grade scientific calculator with deterministic math engine, equation solver, unit and financial converters, and AI mathematical assistant.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
