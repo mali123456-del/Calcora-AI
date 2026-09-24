@@ -23,6 +23,26 @@
   font-family: var(--font-display);
 }
 
+/* Subtle Theme Switching Cross-Fade Transitions */
+html,
+body,
+#calcora-root {
+  transition: background-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-transitioning,
+.theme-transitioning header,
+.theme-transitioning main,
+.theme-transitioning nav,
+.theme-transitioning [role="dialog"],
+.theme-transitioning .transition-theme-card {
+  transition: background-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Custom scrollbar for mathematical expressions and panels */
 ::-webkit-scrollbar {
   width: 6px;

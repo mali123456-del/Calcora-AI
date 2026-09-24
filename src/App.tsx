@@ -40,6 +40,17 @@ export default function App() {
   // Theme Hook
   const { theme, setTheme } = useTheme();
 
+  // Subtle cross-fade transition state for switching between light and dark modes
+  const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
+
+  useEffect(() => {
+    setIsThemeTransitioning(true);
+    const timer = setTimeout(() => {
+      setIsThemeTransitioning(false);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [theme]);
+
   // Calculator Engine Hook
   const calc = useCalculator();
 
@@ -55,19 +66,24 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Global Keyboard Hook (active on calculator tab)
+  // Track modal visibility states to prevent keyboard collisions
+  const isAnyModalOpen = isCommandPaletteOpen || isVerificationOpen || isWorkspaceOpen;
+  const isCalculatorKeyboardActive = activeTab === 'calculator' && !isAnyModalOpen;
+
+  // Global Keyboard Hook for calculator interactions
+  // Supports: Enter (Calculate), Escape (Clear All), Delete/Backspace (Backspace), digits, operators
   useKeyboard(
     {
       onDigit: calc.inputDigit,
       onDecimal: calc.inputDecimal,
       onOperator: calc.inputOperator,
       onParenthesis: calc.inputParenthesis,
-      onCalculate: calc.calculate,
-      onClear: calc.clearAll,
-      onBackspace: calc.backspace,
+      onCalculate: calc.calculate, // Enter or =
+      onClear: calc.clearAll,       // Escape
+      onBackspace: calc.backspace,  // Delete or Backspace
       onFactorial: calc.inputFactorial,
     },
-    activeTab === 'calculator' && !isCommandPaletteOpen && !isVerificationOpen && !isWorkspaceOpen
+    isCalculatorKeyboardActive
   );
 
   const handleApplyToCalculator = (expr: string) => {
@@ -87,7 +103,20 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors selection:bg-cyan-500 selection:text-slate-950">
+    <div
+      id="calcora-root"
+      className={`min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-500 ease-in-out selection:bg-cyan-500 selection:text-slate-950 relative overflow-x-hidden ${
+        isThemeTransitioning ? 'theme-transitioning' : ''
+      }`}
+    >
+      {/* Subtle atmospheric cross-fade glow layer */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 opacity-40 dark:opacity-20 transition-opacity duration-700 ease-in-out overflow-hidden"
+        aria-hidden="true"
+      >
+        <div className="absolute -top-[15%] left-1/2 -translate-x-1/2 w-[900px] h-[450px] bg-gradient-to-b from-cyan-500/10 dark:from-cyan-500/5 via-indigo-500/5 to-transparent blur-3xl rounded-full transition-all duration-700" />
+      </div>
+
       {/* Top Application Header */}
       <Header
         activeTab={activeTab}

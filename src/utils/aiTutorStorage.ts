@@ -22,6 +22,7 @@ export interface TutorStoredSettings {
   topicOverride?: MathTopic;
   socraticMode: boolean;
   examMode: boolean;
+  savedHintLevel?: number;
 }
 
 export interface TutorStoredStats {

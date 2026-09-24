@@ -315,7 +315,7 @@ export function checkUserStep(
   }
 
   // Check for illegal transformation: division by zero
-  if (/\/0(?![.\d])/i.test(cleanStep) || /divide\s+by\s+0/i.test(cleanStep)) {
+  if (/\/\s*0(?![.\d])/i.test(cleanStep) || /divide\s+by\s+0/i.test(cleanStep)) {
     return {
       status: 'invalid_transformation',
       statusLabel: 'Invalid Transformation: Division by Zero',

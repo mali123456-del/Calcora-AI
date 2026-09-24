@@ -36,7 +36,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
       : suiteResult.results.filter((r) => r.category === filterCategory);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Production Verification Suite"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md"
+    >
       <div className="w-full max-w-3xl max-h-[90vh] bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-950/40">

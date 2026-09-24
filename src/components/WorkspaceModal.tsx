@@ -160,7 +160,12 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Workspaces and Notes"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs"
+    >
       <div className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">

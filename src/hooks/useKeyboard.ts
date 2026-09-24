@@ -27,6 +27,14 @@ export function useKeyboard(handlers: KeyboardHandlers, isEnabled: boolean = tru
         return;
       }
 
+      // Do not capture if any modal dialog is currently active in the document
+      const hasActiveModal = Boolean(
+        document.querySelector('[role="dialog"], [aria-modal="true"]')
+      );
+      if (hasActiveModal) {
+        return;
+      }
+
       const key = e.key;
 
       // Digits 0-9
@@ -75,22 +83,22 @@ export function useKeyboard(handlers: KeyboardHandlers, isEnabled: boolean = tru
         return;
       }
 
-      // Calculate (Enter or =)
+      // Calculate: Enter or = key
       if (key === 'Enter' || key === '=') {
         e.preventDefault();
         handlers.onCalculate();
         return;
       }
 
-      // Backspace
-      if (key === 'Backspace') {
+      // Backspace: Backspace or Delete key
+      if (key === 'Backspace' || key === 'Delete') {
         e.preventDefault();
         handlers.onBackspace();
         return;
       }
 
-      // Clear (Escape or Delete)
-      if (key === 'Escape' || key === 'Delete') {
+      // Clear All: Escape key
+      if (key === 'Escape') {
         e.preventDefault();
         handlers.onClear();
         return;

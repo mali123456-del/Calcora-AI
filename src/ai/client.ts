@@ -9,6 +9,11 @@ import { AIMessage, QuizQuestion } from '../types';
 import { calculateExpression } from '../engine/mathEngine';
 import { solveEquation } from '../engine/equationSolver';
 import { generateCalculationExplanation } from '../engine/stepExplainer';
+import { classifyMathematicalIntent } from '../knowledge/intentClassifier';
+import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
+import { extractMathematicalProblem } from '../engine/problemExtractor';
+import { toolCalculate, toolSolveEquation, toolDerivative, toolStatistics } from '../engine/toolLayer';
+import { getLanguageTemplate } from '../knowledge/multilingualTutor';
 
 export interface AIResponse {
   answer: string;
@@ -18,6 +23,8 @@ export interface AIResponse {
   isVerified?: boolean;
   verificationNote?: string;
   isOfflineFallback?: boolean;
+  knowledgeConceptsUsed?: string[];
+  isGrounded?: boolean;
 }
 
 /**
@@ -63,6 +70,7 @@ export interface TutoringRequestOptions {
   hintLevel?: number;
   socraticMode?: boolean;
   userStep?: string;
+  language?: string;
 }
 
 export async function askAIMathAssistant(
@@ -73,6 +81,16 @@ export async function askAIMathAssistant(
   mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain',
   tutorOptions: TutoringRequestOptions = {}
 ): Promise<AIResponse> {
+  const intentResult = classifyMathematicalIntent(prompt);
+  const knowledgeResult = retrieveMathematicsKnowledge({
+    query: prompt,
+    topic: tutorOptions.topic,
+    calculatorExpression: currentExpression,
+    intent: intentResult.intent,
+  });
+
+  const conceptsUsed = knowledgeResult.allRetrieved.map((k) => k.concept);
+
   try {
     const res = await fetch('/api/ai/math', {
       method: 'POST',
@@ -92,6 +110,9 @@ export async function askAIMathAssistant(
         hintLevel: tutorOptions.hintLevel || 1,
         socraticMode: tutorOptions.socraticMode || false,
         userStep: tutorOptions.userStep,
+        groundingContext: knowledgeResult.groundingContextText,
+        intent: intentResult.intent,
+        language: tutorOptions.language || 'en',
       }),
     });
 
@@ -110,14 +131,16 @@ export async function askAIMathAssistant(
       answer: data.answer || 'Response received',
       expression: rawExpr,
       steps: data.steps || [],
-      formula: data.formula || null,
-      isVerified: handshake.isVerified,
-      verificationNote: handshake.verificationNote,
+      formula: data.formula || (knowledgeResult.formulas[0] ? `$${knowledgeResult.formulas[0]}$` : null),
+      isVerified: Boolean(data.isVerified || handshake.isVerified),
+      verificationNote: data.verificationNote || handshake.verificationNote,
       isOfflineFallback: Boolean(data.isOfflineFallback),
+      knowledgeConceptsUsed: conceptsUsed.length > 0 ? conceptsUsed : undefined,
+      isGrounded: conceptsUsed.length > 0,
     };
   } catch (error: any) {
     console.warn('AI API call failed, falling back to local deterministic tutor:', error);
-    return fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions);
+    return fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions, knowledgeResult);
   }
 }
 
@@ -128,10 +151,67 @@ function fallbackLocalMathTutor(
   prompt: string,
   currentExpression?: string,
   currentResult?: string,
-  tutorOptions: TutoringRequestOptions = {}
+  tutorOptions: TutoringRequestOptions = {},
+  retrievedKnowledge?: ReturnType<typeof retrieveMathematicsKnowledge>
 ): AIResponse {
   const p = prompt.trim();
   const { tutorMode, hintLevel = 1, socraticMode = false, userStep } = tutorOptions;
+  const langTemplate = getLanguageTemplate(tutorOptions.language || 'en');
+
+  // Step 1: Check if an exact problem can be extracted and solved deterministically
+  const extracted = extractMathematicalProblem(p);
+  if (extracted) {
+    if (extracted.type === 'arithmetic') {
+      const calc = toolCalculate(extracted.canonicalExpression);
+      if (calc.success && calc.result) {
+        return {
+          answer: `${langTemplate.answerLabel} ${calc.result}\n\n$${calc.expression} = ${calc.result}$\n\n${langTemplate.directAnswerPhrase(calc.expression || '', calc.result)}`,
+          expression: calc.expression,
+          steps: calc.steps,
+          formula: calc.formula || null,
+          isVerified: true,
+          verificationNote: langTemplate.verifiedBadge,
+          isOfflineFallback: true,
+        };
+      }
+    }
+    if (extracted.type === 'equation') {
+      const eqSol = toolSolveEquation(extracted.canonicalExpression);
+      if (eqSol.success && eqSol.result) {
+        return {
+          answer: `${langTemplate.answerLabel} ${eqSol.result}\n\n${eqSol.steps?.join('\n')}`,
+          expression: eqSol.expression,
+          steps: eqSol.steps,
+          formula: eqSol.formula,
+          isVerified: true,
+          verificationNote: langTemplate.verifiedBadge,
+          isOfflineFallback: true,
+        };
+      }
+    }
+    if (extracted.type === 'statistics' && extracted.parameters?.data) {
+      const statsRes = toolStatistics(extracted.parameters.data);
+      if (statsRes.success) {
+        return {
+          answer: `${langTemplate.answerLabel} ${statsRes.result}`,
+          steps: statsRes.steps,
+          formula: statsRes.formula,
+          isVerified: true,
+          verificationNote: langTemplate.verifiedBadge,
+          isOfflineFallback: true,
+        };
+      }
+    }
+  }
+
+  const knowledge =
+    retrievedKnowledge ||
+    retrieveMathematicsKnowledge({
+      query: p,
+      topic: tutorOptions.topic,
+      calculatorExpression: currentExpression,
+    });
+  const conceptsUsed = knowledge.allRetrieved.map((k) => k.concept);
 
   // If user submitted a step to check
   if (userStep && userStep.trim()) {
@@ -142,8 +222,10 @@ function fallbackLocalMathTutor(
         'Verified preservation of equality across both sides of the equation.',
       ],
       isVerified: true,
-      verificationNote: 'Verified by Calculator Engine',
+      verificationNote: langTemplate.verifiedBadge,
       isOfflineFallback: true,
+      knowledgeConceptsUsed: conceptsUsed.length > 0 ? conceptsUsed : undefined,
+      isGrounded: conceptsUsed.length > 0,
     };
   }
 
@@ -155,12 +237,73 @@ function fallbackLocalMathTutor(
       return {
         answer: eqRes.explanation,
         steps: eqRes.steps,
-        formula: eqRes.type === 'quadratic' ? 'x = (-b ± √(b² - 4ac)) / (2a)' : 'ax + b = 0 ⇒ x = -b/a',
+        formula: eqRes.type === 'quadratic' ? '$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$' : '$ax + b = 0 \\implies x = -\\frac{b}{a}$',
         isVerified: true,
         verificationNote: 'Verified by Calculator Engine',
         isOfflineFallback: true,
+        knowledgeConceptsUsed: conceptsUsed.length > 0 ? conceptsUsed : undefined,
+        isGrounded: conceptsUsed.length > 0,
       };
     }
+  }
+
+  // Check if knowledge base matches concept directly
+  if (knowledge.primaryConcept) {
+    const concept = knowledge.primaryConcept;
+    const formulasStr = concept.formulas.map((f) => `$${f}$`).join(', ');
+
+    if (tutorMode === 'tutor' && socraticMode) {
+      return {
+        answer: `**${concept.concept}** (${concept.topic})\n\nTo think through this, consider: **${concept.commonMistakes[0]?.preventionTip || `What fundamental principle or formula connects the known variables in ${concept.concept}?`}**\n\nTake a step and enter what operation or formula you believe applies here.`,
+        steps: [
+          `Topic: ${concept.topic} - ${concept.subtopic}`,
+          'Socratic inquiry active: guide your own discovery.',
+        ],
+        formula: formulasStr ? formulasStr : null,
+        isVerified: true,
+        verificationNote: 'Grounded in Mathematical Knowledge Base',
+        isOfflineFallback: true,
+        knowledgeConceptsUsed: conceptsUsed,
+        isGrounded: true,
+      };
+    }
+
+    if (tutorMode === 'tutor' && hintLevel < 5) {
+      const hintSteps = [
+        `Hint 1 (Direction): ${concept.definition}`,
+        `Hint 2 (Formula/Theorem): ${formulasStr}`,
+        `Hint 3 (Domain/Restrictions): ${concept.domainRestrictions.join('; ') || 'Standard real domain'}`,
+        `Hint 4 (Key Strategy): ${concept.solutionStrategies[0] || 'Apply standard reduction steps.'}`,
+      ];
+      return {
+        answer: `**${concept.concept}** (Hint Level ${hintLevel} of 5)\n\n${hintSteps[hintLevel - 1] || hintSteps[0]}`,
+        steps: hintSteps.slice(0, hintLevel),
+        formula: formulasStr ? formulasStr : null,
+        isVerified: true,
+        verificationNote: 'Grounded in Mathematical Knowledge Base',
+        isOfflineFallback: true,
+        knowledgeConceptsUsed: conceptsUsed,
+        isGrounded: true,
+      };
+    }
+
+    const steps = [
+      `Definition: ${concept.definition}`,
+      concept.formulas.length > 0 ? `Formula: ${formulasStr}` : '',
+      concept.domainRestrictions.length > 0 ? `Domain Restrictions: ${concept.domainRestrictions.join(', ')}` : '',
+      concept.examples.length > 0 ? `Example: ${concept.examples[0].problem} → ${concept.examples[0].solution}` : '',
+    ].filter(Boolean);
+
+    return {
+      answer: `**${concept.concept}**\n\n${concept.definition}\n\n**Standard Formulation:**\n${concept.latexRepresentation ? `$$${concept.latexRepresentation}$$` : formulasStr}`,
+      steps,
+      formula: formulasStr ? formulasStr : null,
+      isVerified: true,
+      verificationNote: 'Grounded in Mathematical Knowledge Base',
+      isOfflineFallback: true,
+      knowledgeConceptsUsed: conceptsUsed,
+      isGrounded: true,
+    };
   }
 
   // Check if user is asking for percentage: e.g. "what is 15% of 850?"

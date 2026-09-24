@@ -93,6 +93,7 @@ import {
   recordPracticeSessionResult,
   TutorStoredStats,
 } from '../utils/aiTutorStorage';
+import { SUPPORTED_LANGUAGES } from '../knowledge/multilingualTutor';
 
 interface AIAssistantPanelProps {
   currentExpression?: string;
@@ -210,6 +211,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   );
   const [socraticMode, setSocraticMode] = useState<boolean>(initialSettings.socraticMode ?? true);
   const [examMode, setExamMode] = useState<boolean>(initialSettings.examMode ?? false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
 
   // Messages state
   const [messages, setMessages] = useState<AIMessage[]>([
@@ -406,6 +408,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           topic: effectiveTopic,
           hintLevel,
           socraticMode,
+          language: selectedLanguage,
         }
       );
 
@@ -419,6 +422,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         isVerified: response.isVerified,
         verificationNote: response.verificationNote,
         timestamp: Date.now(),
+        knowledgeConceptsUsed: response.knowledgeConceptsUsed,
+        isGrounded: response.isGrounded,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -1077,6 +1082,24 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <option value="review-mistakes" className="bg-slate-900 text-white">
                   Review mistakes
                 </option>
+              </select>
+            </div>
+
+            {/* Language Selector */}
+            <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
+              <span className="text-[11px] text-slate-400 font-medium">Lang:</span>
+              <select
+                id="select-tutor-language"
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                className="bg-transparent text-purple-300 font-semibold focus:outline-none cursor-pointer text-xs max-w-[130px]"
+                title="Select language for tutor explanations"
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-200">
+                    {lang.name} ({lang.nativeName})
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1798,6 +1821,17 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                         </button>
                       )}
                     </div>
+
+                    {/* Grounded Mathematical Knowledge Badge */}
+                    {msg.isGrounded && (
+                      <div
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                        title={msg.knowledgeConceptsUsed?.join(', ') || 'Grounded in verified mathematical corpus'}
+                      >
+                        <BookOpen className="w-3 h-3 text-cyan-400" />
+                        <span>Grounded: {msg.knowledgeConceptsUsed?.[0] || 'Core Math'}</span>
+                      </div>
+                    )}
 
                     {/* Deterministic Verification Handshake Badge */}
                     {msg.isVerified !== undefined && (

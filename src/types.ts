@@ -57,6 +57,40 @@ export interface Fraction {
   denominator: number;
 }
 
+// Mathematical Tool Result Contract & Verification Badges
+export interface MathVerificationBadge {
+  isVerified: boolean;
+  verificationMethod: string;
+  verificationMessage: string;
+  timestamp?: string;
+  confidence: number;
+}
+
+export interface MathToolResult {
+  success: boolean;
+  toolName: string;
+  expression: string;
+  result: string;
+  exactResult: string;
+  approximateResult?: string;
+  derivationSteps: string[];
+  formula?: string | null;
+  domain?: string | null;
+  domainRestrictions: string[];
+  verificationBadge: MathVerificationBadge;
+  executionTimeMs?: number;
+  metadata?: Record<string, any>;
+  error?: string;
+  // Aliases for unified consumption
+  steps?: string[];
+  restrictions?: string[];
+  verification?: {
+    isVerified: boolean;
+    method: string;
+    message: string;
+  };
+}
+
 // Programmer Mode Types
 export type BitWidth = 8 | 16 | 32 | 64;
 export type NumberBase = 'HEX' | 'DEC' | 'OCT' | 'BIN';
@@ -360,6 +394,8 @@ export interface AIMessage {
   verificationNote?: string;
   timestamp: number;
   isError?: boolean;
+  knowledgeConceptsUsed?: string[];
+  isGrounded?: boolean;
 }
 
 export interface QuizQuestion {

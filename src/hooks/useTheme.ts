@@ -25,6 +25,7 @@ export function useTheme() {
 
       setResolvedTheme(isDark ? 'dark' : 'light');
       const root = document.documentElement;
+      document.body.style.transition = 'background-color 500ms cubic-bezier(0.4, 0, 0.2, 1), color 500ms cubic-bezier(0.4, 0, 0.2, 1)';
       if (isDark) {
         root.classList.add('dark');
         root.classList.remove('light');
