@@ -20,8 +20,8 @@ import {
   toolDerivative,
   toolIntegrate,
   toolStatistics,
-  MathToolResult,
 } from '../engine/toolLayer';
+import type { MathToolResult } from '../types';
 import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
 import {
   getLanguageTemplate,
@@ -312,7 +312,7 @@ export async function orchestrateTutor(
 
   // Resolve active functional tutor mode
   const effectiveMode: FunctionalTutorMode =
-    mode || (socraticMode ? 'socratic' : 'explain');
+    mode || (socraticMode ? 'socratic' : 'assistant');
 
   if (!prompt || !prompt.trim()) {
     return {
@@ -375,12 +375,12 @@ export async function orchestrateTutor(
       .trim();
 
     if (cleaned.includes('=') && /[a-zA-Z]/.test(cleaned)) {
-      const eqAttempt = toolSolveEquation(cleaned);
+      const eqAttempt = toolSolveEquation({ equation: cleaned });
       if (eqAttempt.success) {
         deterministicResult = eqAttempt;
       }
     } else if (cleaned) {
-      const calcAttempt = toolCalculate(cleaned);
+      const calcAttempt = toolCalculate({ expression: cleaned });
       if (calcAttempt.success) {
         deterministicResult = calcAttempt;
       }
@@ -389,7 +389,7 @@ export async function orchestrateTutor(
 
   // Fallback 2: Active calculator expression if prompt had no match
   if ((!deterministicResult || !deterministicResult.success) && currentExpression && currentExpression.trim()) {
-    const calc = toolCalculate(currentExpression);
+    const calc = toolCalculate({ expression: currentExpression });
     if (calc.success) {
       deterministicResult = calc;
     }
