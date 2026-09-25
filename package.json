@@ -3,7 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "description": "Digital AI Scientific Calculator and mathematics workbench",
-  "author": { "name": "Calcora AI", "email": "noreply@github.com" },
+  "author": {
+    "name": "Calcora AI",
+    "email": "noreply@github.com"
+  },
   "desktopName": "calcora-ai",
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -32,7 +35,8 @@
     "test:desktop": "tsx tests/desktopRuntimeConfig.test.ts",
     "test:tutor-guard": "tsx tests/tutorResponseGuard.test.ts",
     "test:multilingual-adversarial": "tsx tests/multilingualAdversarial.test.ts",
-    "test:math-100": "tsx tests/mathRegression100.test.ts"
+    "test:math-100": "tsx tests/mathRegression100.test.ts",
+    "test:gemini-availability": "tsx tests/geminiAvailability.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
