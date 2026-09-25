@@ -60,6 +60,24 @@ export interface TutorOrchestrationOptions {
   offlineOnly?: boolean;
 }
 
+export type GeminiAvailabilityReason = 'api-key-available' | 'missing-api-key' | 'placeholder-api-key' | 'offline-only';
+
+export interface GeminiAvailability {
+  available: boolean;
+  reason: GeminiAvailabilityReason;
+}
+
+/** Resolve Gemini availability without ever exposing the API key value. */
+export function resolveGeminiAvailability(apiKey: string | undefined, offlineOnly = false): GeminiAvailability {
+  if (offlineOnly) return { available: false, reason: 'offline-only' };
+  const normalized = apiKey?.trim();
+  if (!normalized) return { available: false, reason: 'missing-api-key' };
+  if (/^(MY_GEMINI_API_KEY|your[_-]?gemini[_-]?api[_-]?key|changeme)$/i.test(normalized)) {
+    return { available: false, reason: 'placeholder-api-key' };
+  }
+  return { available: true, reason: 'api-key-available' };
+}
+
 export interface TutorOrchestrationResult {
   success: boolean;
   answer: string;
@@ -430,7 +448,8 @@ export async function orchestrateTutor(
   // Step 3: Offline / Deterministic Fallback Mode (No API Key or Offline)
   // --------------------------------------------------------------------------
   const apiKey = process.env.GEMINI_API_KEY;
-  const isKeyAvailable = Boolean(apiKey && apiKey !== 'MY_GEMINI_API_KEY' && !options.offlineOnly);
+  const geminiAvailability = resolveGeminiAvailability(apiKey, options.offlineOnly);
+  const isKeyAvailable = geminiAvailability.available;
 
   if (!isKeyAvailable) {
     let offlineAnswerData: { answer: string; steps: string[]; formula: string | null; quizItem?: TutorQuizItemData };
