@@ -2,6 +2,19 @@ import type { AIMessage } from '../types';
 import type { DifficultyLevel, MathTopic, TutorMode } from '../utils/aiTutor';
 
 export type TutorLearningLevel = DifficultyLevel;
+export type FunctionalTutorMode = TutorMode;
+export type MathProblemContext = TutorProblemContext;
+export type UserLearningLevel = TutorLearningState;
+
+export interface TutorQuizItemData {
+  question: string;
+  options?: string[];
+  correctAnswer: string;
+  userAnswer?: string;
+  isCorrect?: boolean;
+  hint?: string;
+  explanation: string;
+}
 
 export interface TutorProblemContext {
   rawProblem: string;
