@@ -100,7 +100,7 @@ export function toolCalculate(args: Record<string, unknown>): MathToolResult {
     const r = calculateExpression(expression, angleMode);
     if (r.error) return fail('calculate', expression, r.error);
     const value = String(r.value);
-    const steps = r.steps ?? [`${expression} = ${value}`];
+    const steps = [`${expression} = ${value}`];
     return result('calculate', expression, value, steps, {
       exactResult: r.exactFraction ?? value,
       approximateResult: value,
@@ -173,7 +173,7 @@ export function toolStatistics(args: Record<string, unknown>): MathToolResult {
     const r = computeStatistics(data as number[]);
     return result('statistics', `[${data.join(', ')}]`, JSON.stringify({ mean:r.mean, median:r.median, mode:r.mode, varianceSample:r.varianceSample, variancePopulation:r.variancePopulation, stdDevSample:r.stdDevSample, stdDevPopulation:r.stdDevPopulation, iqr:r.iqr }), [
       `Count = ${r.count}`, `Mean = ${r.mean}`, `Median = ${r.median}`, `IQR = ${r.iqr}`
-    ], { executionTimeMs: 0, metadata: r });
+    ], { executionTimeMs: 0, metadata: { ...r } });
   } catch (e) { return fail('statistics', 'dataset', e instanceof Error ? e.message : 'Statistics failed'); }
 }
 
