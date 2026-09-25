@@ -3,7 +3,12 @@ import { timingSafeEqual } from 'node:crypto';
 
 export interface TutorEvaluationCase { prompt: string; expectedBehavior: string; deterministicAuthority: boolean; sourceItemId?: string | null; }
 
-export function isLearningEvaluationAuthorized(providedToken: string | undefined, expectedToken: string | undefined): boolean {\n  if (!providedToken || !expectedToken) return false;\n  const provided = Buffer.from(providedToken);\n  const expected = Buffer.from(expectedToken);\n  return provided.length === expected.length && timingSafeEqual(provided, expected);\n}
+export function isLearningEvaluationAuthorized(providedToken: string | undefined, expectedToken: string | undefined): boolean {
+  if (!providedToken || !expectedToken) return false;
+  const provided = Buffer.from(providedToken);
+  const expected = Buffer.from(expectedToken);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
 
 export function buildEvaluationCases(items: Array<{ id?: string; title: string; summary: string; kind: string }>, limit = 20): TutorEvaluationCase[] {
   const cases: TutorEvaluationCase[] = [];
