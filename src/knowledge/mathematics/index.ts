@@ -27,7 +27,8 @@ export {
   getMathIngestionPolicy,
 };
 export type { MathTutorTrainingExample, MathDatasetSource, RawMathDatasetRecord, NormalizedMathTrainingRecord, MathIngestionReport };
-export type { MathematicsKnowledgeItem };\nexport { knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from './supabaseSync';
+export type { MathematicsKnowledgeItem };
+export { knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from './supabaseSync';
 
 export const mathematicsKnowledgeIndex = new Map(
   [...CORE_MATHEMATICS_KNOWLEDGE, ...EXTENDED_MATHEMATICS_KNOWLEDGE, ...ADDITIONAL_MATHEMATICS_KNOWLEDGE].map((item) => [item.id, item] as const),
