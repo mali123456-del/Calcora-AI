@@ -23,7 +23,7 @@ const SCRIPT_PATTERNS: Array<[string, RegExp]> = [
 
 const ROMAN_URDU = /\b(acha|achha|hai|hain|ho|hoga|karo|karna|mujhe|mujhy|tum|aap|ap|usko|isko|men|mein|kay|ke|ki|ko|se|par|yeh|yah|bhi|aur|agla|command|samjho|samjhao|batao|ker|karo|nahi|nahin)\b/i;
 const ROMAN_HINDI = /\b(kya|mujhe|mujhko|tumhe|aapko|hai|hain|kaise|samjhao|batao|chahiye|karna|hoga|nahi)\b/i;
-const COMMON_ENGLISH = /\b(the|and|is|are|what|how|why|please|explain|calculate|solve|show|give|make|add|feature|language|grammar)\b/i;
+const COMMON_ENGLISH = /\b(the|and|is|are|what|how|why|please|explain|calculate|solve|show|give|make|add|feature|language|grammar|in|simple|words|equation|this|that|for|to|of|with|me|my|can|you)\b/i;
 
 export function analyzeTutorInput(text: string, requestedLanguage?: string): MultilingualInputAnalysis {
   const input = text.trim().replace(/\s+/g, ' ');
