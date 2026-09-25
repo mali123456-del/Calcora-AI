@@ -19,7 +19,7 @@ export const MULTILINGUAL_KNOWLEDGE_SOURCES: readonly MultilingualKnowledgeSourc
   { id:'huggingface', name:'Hugging Face', url:'https://huggingface.co/', type:'ai-benchmark', usage:'Discovery of documented multilingual/open models; never copy private weights or data.', policy:'public-metadata' },
   { id:'chatgpt', name:'OpenAI ChatGPT', url:'https://chatgpt.com/', type:'ai-benchmark', usage:'Public capability benchmarking and interaction-pattern research only.', policy:'public-metadata' },
   { id:'claude', name:'Anthropic Claude', url:'https://claude.ai/', type:'ai-benchmark', usage:'Public capability benchmarking and interaction-pattern research only.', policy:'public-metadata' },
-  { id:'gemini', name:'Google Gemini', url:'https://gemini.google.com/', type:'ai-benchmark', usage:'Public capability benchmarking; Calcora's configured Gemini API remains the actual runtime model.', policy:'public-metadata' },
+  { id:'gemini', name:'Google Gemini', url:'https://gemini.google.com/', type:'ai-benchmark', usage:"Public capability benchmarking; Calcora's configured Gemini API remains the actual runtime model.", policy:'public-metadata' },
   { id:'duolingo', name:'Duolingo', url:'https://www.duolingo.com/', type:'grammar-checking', usage:'Publicly documented language-learning interaction patterns only.', policy:'public-metadata' },
   { id:'apics', name:'APiCS Online', url:'https://apics-online.info/', type:'grammar', usage:'Comparative grammar evidence for creole and contact-language varieties.', policy:'public-dataset' },
   { id:'groq', name:'Groq', url:'https://groq.com/', type:'ai-provider', usage:'Public runtime/provider capability reference; use only configured APIs and documented interfaces.', policy:'public-metadata' },

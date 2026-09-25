@@ -133,10 +133,8 @@ async function startServer() {
         return res.json({
           success: true,
           isOfflineFallback: true,
-          answer: orchestration.answer
-          : `AI Math Assistant & Tutor is ready. To enable live Gemini responses, ensure your GEMINI_API_KEY is configured in Settings > Secrets.\n\nQuery received: "${prompt}".\n\nTip: You can use the deterministic calculator, equation solver, unit converter, and tutoring tools directly!`,
-          steps: orchestration.steps
-            : ['Input parsed safely.', 'No deterministic tool was applicable.'],
+          answer: orchestration.answer || `AI Math Assistant & Tutor is ready. To enable live Gemini responses, ensure your GEMINI_API_KEY is configured in Settings > Secrets.\n\nQuery received: "${prompt}".\n\nTip: You can use the deterministic calculator, equation solver, unit converter, and tutoring tools directly!`,
+          steps: orchestration.steps || ['Input parsed safely.', 'No deterministic tool was applicable.'],
           meta: { language: safeLanguage, grounded: false, deterministicVerified: orchestration.authoritative, tutorMode, mode: orchestration.mode },
         });
       }

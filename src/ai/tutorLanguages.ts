@@ -119,7 +119,7 @@ export const TUTOR_LANGUAGES: readonly TutorLanguage[] = [
   { code: 'ug', name: 'Uyghur', nativeName: 'ئۇيغۇرچە', mathLocale: 'ug-CN' },
   { code: 'yi', name: 'Yiddish', nativeName: 'ייִדיש', mathLocale: 'yi' },
   { code: 'qu', name: 'Quechua', nativeName: 'Runa Simi', mathLocale: 'qu-PE' },
-  { code: 'gn', name: 'Guarani', nativeName: 'Avañe\\'ẽ', mathLocale: 'gn-PY' },
+  { code: 'gn', name: 'Guarani', nativeName: "Avañe'ẽ", mathLocale: 'gn-PY' },
   { code: 'ht', name: 'Haitian Creole', nativeName: 'Kreyòl Ayisyen', mathLocale: 'ht-HT' },
   { code: 'tw', name: 'Twi', nativeName: 'Twi', mathLocale: 'tw-GH' },
   { code: 'wo', name: 'Wolof', nativeName: 'Wolof', mathLocale: 'wo-SN' },
