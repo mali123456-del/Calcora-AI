@@ -102,7 +102,6 @@
       ],
       "category": "Education",
       "maintainer": "Calcora AI <noreply@github.com>",
-      "syncDesktopName": true,
       "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
     }
   }
