@@ -119,12 +119,18 @@ async function startServer() {
         return res.status(400).json({ error: 'Prompt is required' });
       }
 
-      const inputAnalysis = analyzeTutorInput(prompt, language);
-      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(prompt);
+      // Backward-compatible defense: older Quick Prompt clients embedded internal response-profile metadata.
+      // Never let that control marker enter conversation history, deterministic parsing, or user-visible output.
+      const embeddedProfile = prompt.match(/^\[CALCORA_RESPONSE_PROFILE:(quick|deep|balanced)\]\s*/i)?.[1] as 'quick' | 'deep' | 'balanced' | undefined;
+      const cleanPrompt = prompt.replace(/^\[CALCORA_RESPONSE_PROFILE:(?:quick|deep|balanced)\]\s*/i, '').trim();
+      const effectiveResponseProfile = embeddedProfile || responseProfile;
+
+      const inputAnalysis = analyzeTutorInput(cleanPrompt, language);
+      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(cleanPrompt);
       const languageCapability = getTutorLanguageCapability(safeLanguage);
       const inputUnderstandingInstruction = buildInputUnderstandingInstruction(inputAnalysis);
       const multilingualResponseQualityInstruction = buildMultilingualResponseQualityInstruction(inputAnalysis, safeLanguage);
-      const orchestration = await orchestrateTutor(prompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
+      const orchestration = await orchestrateTutor(cleanPrompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
       const deterministicContext = orchestration.deterministic?.success
         ? JSON.stringify(orchestration.deterministic)
         : '';
@@ -144,9 +150,9 @@ async function startServer() {
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
       });
 
-      const responseProfileGuidance = responseProfile === 'quick'
+      const responseProfileGuidance = effectiveResponseProfile === 'quick'
         ? `QUICK RESPONSE PROFILE ACTIVE: Put the verified result or direct definition first. Keep the initial answer compact (prefer 3-6 short lines), then offer expandable detail. Do not sacrifice mathematical correctness or domain restrictions.`
-        : responseProfile === 'deep'
+        : effectiveResponseProfile === 'deep'
         ? `DEEP RESPONSE PROFILE ACTIVE: Give a rigorous derivation, assumptions, domain checks, alternative method when useful, and a compact verification section.`
         : `BALANCED RESPONSE PROFILE ACTIVE: Give the direct result first, then the minimum useful derivation and verification.`;
 
@@ -162,7 +168,7 @@ async function startServer() {
         ? `SOLVER REVIEW MODE ACTIVE: Audit the mathematical solution, edge cases, domain restrictions, assumptions, and applied rules.`
         : `STANDARD ASSISTANT MODE ACTIVE: Provide direct, concise answers with step-by-step proofs and LaTeX formulas.`;
 
-      const knowledgeQuery = prompt.slice(0, 500);
+      const knowledgeQuery = cleanPrompt.slice(0, 500);
       const knowledgeResult = await executeMathTool('retrieveKnowledge', { query: knowledgeQuery, limit: 6 });
       const retrievedKnowledge = knowledgeResult.success ? knowledgeResult.metadata?.matches : [];
       const safeGroundingContext = typeof groundingContext === 'string' ? groundingContext.slice(0, 12000) : '';
@@ -245,7 +251,7 @@ Return clean JSON:
       const historyContext = Array.isArray(conversation)
         ? conversation.slice(-6).map((m: { role: string; content: string }) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
         : '';
-      const fullPrompt = historyContext ? `${historyContext}\nUser: ${prompt}` : prompt;
+      const fullPrompt = historyContext ? `${historyContext}\nUser: ${cleanPrompt}` : cleanPrompt;
       const startedAt = Date.now();
 
       const response = await ai.models.generateContent({
@@ -268,7 +274,7 @@ Return clean JSON:
         deterministicSteps: orchestration.deterministic?.success ? orchestration.deterministic.derivationSteps : [],
         deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
         meta: {
-          responseProfile,
+          responseProfile: effectiveResponseProfile,
           tutorMode,
           language: safeLanguage,
           grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),

@@ -3,6 +3,7 @@ import { AIMessage } from '../types';
 export type QuickPromptType = 'explain-step' | 'check-errors' | 'simplify' | 'solve-step-by-step' | 'alternative' | 'quick-answer' | 'definition' | 'word-problem' | 'worksheet' | 'lesson-plan' | 'business-analysis' | 'security-math';
 export interface QuickPromptContext { inputPrompt?: string; currentExpression?: string; currentResult?: string; targetStep?: string; lastAssistantMessage?: AIMessage; }
 export interface QuickPromptItem { id: QuickPromptType; label: string; description: string; badge?: string; }
+export function getQuickPromptProfile(type: QuickPromptType): 'quick' | 'deep' | 'balanced' { return type === 'quick-answer' ? 'quick' : 'deep'; }
 export const QUICK_PROMPT_ITEMS: QuickPromptItem[] = [
   { id: 'explain-step', label: 'Explain this step', description: 'Deconstruct the mathematical derivation and principles behind a step', badge: 'Tutor' },
   { id: 'check-errors', label: 'Check for errors', description: 'Audit calculations for sign mistakes, domain errors, and arithmetic slips', badge: 'Audit' },
@@ -20,10 +21,8 @@ export const QUICK_PROMPT_ITEMS: QuickPromptItem[] = [
 export function buildQuickPrompt(type: QuickPromptType, context: QuickPromptContext = {}): string {
   const { inputPrompt, currentExpression, currentResult, targetStep, lastAssistantMessage } = context;
   const userTyped = inputPrompt?.trim();
-  const profile = type === 'quick-answer' ? 'quick' : 'deep';
-  const prefix = `[CALCORA_RESPONSE_PROFILE:${profile}]`;
   switch (type) {
-    case 'explain-step': return `${prefix} Explain this step in detail and name the exact mathematical rule used: ${targetStep || userTyped || currentExpression || lastAssistantMessage?.content || 'the current step'}`;
+    case 'explain-step': return `Explain this step in detail and name the exact mathematical rule used: ${targetStep || userTyped || currentExpression || lastAssistantMessage?.content || 'the current step'}`;
     case 'check-errors': return `${prefix} Audit this calculation for errors, sign mistakes, domain restrictions, false assumptions, and rounding issues: ${userTyped || currentExpression || lastAssistantMessage?.content || 'the current derivation'}`;
     case 'simplify': return `${prefix} Simplify this expression step-by-step to canonical form: ${userTyped || currentExpression || 'the current mathematical expression'}`;
     case 'solve-step-by-step': return `${prefix} Solve this problem step-by-step with clear derivations and justifications: ${userTyped || currentExpression || 'the current problem'}`;

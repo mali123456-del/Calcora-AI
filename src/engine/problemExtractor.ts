@@ -20,14 +20,20 @@ const numberWord: Record<string,string> = {
 
 function normalize(text: string): string {
   let s = text.toLowerCase().replace(/×|✕/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
-  for (const [word, value] of Object.entries(numberWord)) s = s.replace(new RegExp('\\b'+word+'\\b','g'), value);
-  s = s.replace(/\\b(times|multiplied by)\\b/g,'*')
-    .replace(/\\b(divided by|over)\\b/g,'/')
-    .replace(/\\b(plus|added to)\\b/g,'+')
-    .replace(/\\b(minus|subtract)\\b/g,'-')
-    .replace(/\\b(power of)\\b/g,'^')
-    .replace(/\\b(square root of)\\b/g,'sqrt ');
+  for (const [word, value] of Object.entries(numberWord)) {
+    s = s.replace(new RegExp('\\b' + word + '\\b','g'), value);
+  }
+  s = s.replace(/\b(times|multiplied by)\b/g,'*')
+    .replace(/\b(divided by|over)\b/g,'/')
+    .replace(/\b(plus|added to)\b/g,'+')
+    .replace(/\b(minus|subtract)\b/g,'-')
+    .replace(/\b(power of)\b/g,'^')
+    .replace(/\b(square root of)\b/g,'sqrt ');
   return s;
+}
+
+function normalizeArithmeticCandidate(candidate: string): string {
+  return candidate.trim().replace(/=\s*$/,'').trim();
 }
 
 export function extractMathProblem(input: string): ExtractedMathProblem {
@@ -35,15 +41,17 @@ export function extractMathProblem(input: string): ExtractedMathProblem {
   if (!raw || raw.length > 1000) return { kind:'unknown' };
   const s = normalize(raw);
 
-  const integrate = s.match(/integrat(?:e|ion)\\s+(?:the\\s+)?(?:function\\s+)?(.+?)\\s+from\\s+(-?\\d+(?:\\.\\d+)?)\\s+(?:to|until)\\s+(-?\\d+(?:\\.\\d+)?)/i);
+  const integrate = s.match(/integrat(?:e|ion)\s+(?:the\s+)?(?:function\s+)?(.+?)\s+from\s+(-?\d+(?:\.\d+)?)\s+(?:to|until)\s+(-?\d+(?:\.\d+)?)/i);
   if (integrate) return { kind:'integrate', fnExpr: integrate[1].trim(), a:Number(integrate[2]), b:Number(integrate[3]) };
 
-  const equation = raw.match(/(?:solve|find x for|find the roots? of)\\s+(.+?)(?:\\?|$)/i);
+  const equation = raw.match(/(?:solve|find x for|find the roots? of)\s+(.+?)(?:\?|$)/i);
   if (equation && /=/.test(equation[1])) return { kind:'solveEquation', equation:equation[1].trim() };
 
-  const arithmetic = s.match(/(?:what is|calculate|compute|evaluate|equals?)\\s+(.+?)(?:\\?|$)/i);
-  const candidate = arithmetic?.[1]?.trim() ?? (/[+*/^%]/.test(s) && /\\d/.test(s) ? s.replace(/\\?$/,'').trim() : '');
-  if (candidate && /^[0-9+*/%().^\\s-]+$/.test(candidate)) {
+  const arithmetic = s.match(/(?:what is|calculate|compute|evaluate|equals?)\s+(.+?)(?:\?|$)/i);
+  const candidate = arithmetic?.[1]?.trim()
+    ? normalizeArithmeticCandidate(arithmetic[1])
+    : (/[+*/^%]/.test(s) && /\d/.test(s) ? normalizeArithmeticCandidate(s) : '');
+  if (candidate && /^[0-9+*/%().^\s-]+$/.test(candidate)) {
     try {
       const checked = calculateExpression(candidate, 'DEG');
       if (!checked.error) return { kind:'calculate', expression:candidate };
