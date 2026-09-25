@@ -31,8 +31,8 @@ export function analyzeTutorInput(text: string, requestedLanguage?: string): Mul
   const detected = new Set<string>();
   if (/[پچژگھے]/.test(input)) detected.add('ur');
   if (/[ऀ-ॿ]/.test(input)) detected.add('hi');
-  if (/[一-鿿]/.test(input)) detected.add('zh');
   if (/[぀-ヿ]/.test(input)) detected.add('ja');
+  if (/[一-鿿]/.test(input)) detected.add('zh');
   if (/[가-힯]/.test(input)) detected.add('ko');
   if (/[؀-ۿ]/.test(input) && !detected.has('ur')) detected.add('ar');
   if (/[Ѐ-ӿ]/.test(input)) detected.add('ru');
