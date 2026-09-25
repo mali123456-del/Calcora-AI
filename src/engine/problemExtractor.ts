@@ -139,17 +139,42 @@ export function extractMathematicalProblem(rawPrompt: string): ExtractedProblem 
     }
   }
 
-  // 5. Algebraic Equation solving: e.g. "solve 2x + 4 = 10", "x^2 - 5x + 6 = 0", "3x = 12"
-  const eqMatch = normalized.match(/(?:solve\s+)?([a-zA-Z0-9\^\+\-\*\/\(\)\s]+\s*=\s*[a-zA-Z0-9\^\+\-\*\/\(\)\s]+)/i);
+  // 5. Algebraic Equation solving: e.g. "solve 2x + 4 = 10", "solve the equation 2x + 5 = 15", "x^2 - 5x + 6 = 0", "3x = 12"
+  const eqMatch = normalized.match(/(?:solve\s+(?:the\s+)?(?:equation\s+)?)?([a-zA-Z0-9\^\+\-\*\/\(\)\s]+\s*=\s*[a-zA-Z0-9\^\+\-\*\/\(\)\s]+)/i);
   if (eqMatch && /[a-zA-Z]/.test(eqMatch[1])) {
+    let cleanEq = eqMatch[1]
+      .replace(/^(?:the\s+equation|equation|solve\s+for\s+[a-zA-Z]|for\s+[a-zA-Z])\s*/i, '')
+      .replace(/\s+for\s+[a-zA-Z]$/i, '')
+      .trim();
     return {
       type: 'equation',
-      canonicalExpression: eqMatch[1].trim(),
+      canonicalExpression: cleanEq,
       confidence: 0.95,
     };
   }
 
-  // 6. Simple Arithmetic: e.g. "What is 7 times 8?", "17 * 24", "144 / 12", "15 - 7", "2 + 2", "sqrt(144)", "2^10"
+  // 6. Scientific & Trigonometric functions: e.g. "sin(45)", "cos(0)", "tan(45)", "log(100)", "ln(2)", "abs(-15)", "sqrt(144)"
+  const funcPattern = /(?:what\s+is\s+|calculate\s+|compute\s+|evaluate\s+)?\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|log|log10|log2|ln|abs|exp|sqrt|cbrt)\s*\(([^)]+)\)/i;
+  const funcMatch = normalized.match(funcPattern);
+  if (funcMatch) {
+    const fnName = funcMatch[1].toLowerCase();
+    const arg = funcMatch[2].trim();
+    return {
+      type: 'arithmetic',
+      canonicalExpression: `${fnName}(${arg})`,
+      confidence: 0.95,
+    };
+  }
+
+  const funcNoParenMatch = normalized.match(/(?:what\s+is\s+|calculate\s+|compute\s+|evaluate\s+)?\b(sin|cos|tan|log|ln|sqrt)\s+([0-9\.]+)/i);
+  if (funcNoParenMatch) {
+    return {
+      type: 'arithmetic',
+      canonicalExpression: `${funcNoParenMatch[1].toLowerCase()}(${funcNoParenMatch[2]})`,
+      confidence: 0.92,
+    };
+  }
+
   // Check for sqrt explicitly
   const sqrtMatch = normalized.match(/(?:sqrt\s*\(?\s*([0-9\.]+)\s*\)?|square\s+root\s+of\s+([0-9\.]+))/i);
   if (sqrtMatch) {

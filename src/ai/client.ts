@@ -14,12 +14,22 @@ import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
 import { extractMathematicalProblem } from '../engine/problemExtractor';
 import { toolCalculate, toolSolveEquation, toolDerivative, toolStatistics } from '../engine/toolLayer';
 import { getLanguageTemplate } from '../knowledge/multilingualTutor';
+import { FunctionalTutorMode } from '../services/tutorConversationService';
 
 export interface AIResponse {
   answer: string;
   expression?: string | null;
   steps?: string[];
   formula?: string | null;
+  mode?: string;
+  quizItem?: {
+    question: string;
+    options?: string[];
+    correctAnswer?: string;
+    userAnswer?: string;
+    isCorrect?: boolean;
+    explanation?: string;
+  };
   isVerified?: boolean;
   verificationNote?: string;
   isOfflineFallback?: boolean;
@@ -64,6 +74,7 @@ export function verifyWithDeterministicEngine(expression?: string | null): {
 
 export interface TutoringRequestOptions {
   tutorMode?: 'assistant' | 'tutor' | 'solver-review';
+  mode?: FunctionalTutorMode;
   learningObjective?: string;
   difficulty?: string;
   topic?: string;
@@ -78,7 +89,7 @@ export async function askAIMathAssistant(
   conversation: AIMessage[] = [],
   currentExpression?: string,
   currentResult?: string,
-  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain',
+  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' | 'socratic' | 'step-by-step' | 'quiz' = 'explain',
   tutorOptions: TutoringRequestOptions = {}
 ): Promise<AIResponse> {
   const intentResult = classifyMathematicalIntent(prompt);
@@ -102,13 +113,13 @@ export async function askAIMathAssistant(
         conversation,
         currentExpression,
         currentResult,
-        mode,
+        mode: tutorOptions.mode || mode,
         tutorMode: tutorOptions.tutorMode || 'assistant',
         learningObjective: tutorOptions.learningObjective || 'concept',
         difficulty: tutorOptions.difficulty || 'intermediate',
         topic: tutorOptions.topic || 'Algebra',
         hintLevel: tutorOptions.hintLevel || 1,
-        socraticMode: tutorOptions.socraticMode || false,
+        socraticMode: tutorOptions.socraticMode || tutorOptions.mode === 'socratic' || mode === 'socratic',
         userStep: tutorOptions.userStep,
         groundingContext: knowledgeResult.groundingContextText,
         intent: intentResult.intent,

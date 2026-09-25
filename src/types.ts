@@ -58,8 +58,11 @@ export interface Fraction {
 }
 
 // Mathematical Tool Result Contract & Verification Badges
+export type VerificationStatus = 'VERIFIED_DETERMINISTIC' | 'VERIFIED_AXIOMATIC' | 'MODEL_CONFIDENT';
+
 export interface MathVerificationBadge {
   isVerified: boolean;
+  status?: VerificationStatus;
   verificationMethod: string;
   verificationMessage: string;
   timestamp?: string;
@@ -80,6 +83,7 @@ export interface MathToolResult {
   verificationBadge: MathVerificationBadge;
   executionTimeMs?: number;
   metadata?: Record<string, any>;
+  safeMetadata?: Record<string, any>;
   error?: string;
   // Aliases for unified consumption
   steps?: string[];
@@ -392,10 +396,13 @@ export interface AIMessage {
   formula?: string;
   isVerified?: boolean;
   verificationNote?: string;
+  verificationBadge?: MathVerificationBadge;
+  toolResult?: MathToolResult;
   timestamp: number;
   isError?: boolean;
   knowledgeConceptsUsed?: string[];
   isGrounded?: boolean;
+  language?: string;
 }
 
 export interface QuizQuestion {

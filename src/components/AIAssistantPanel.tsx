@@ -93,6 +93,22 @@ import {
   recordPracticeSessionResult,
   TutorStoredStats,
 } from '../utils/aiTutorStorage';
+import {
+  getActiveSession,
+  createNewSession,
+  listSessions,
+  saveSession,
+  updateProblemContext,
+  adaptLearningLevel,
+  setTutorMode as setStoredTutorMode,
+  addMessageToActiveSession,
+  exportSessionMarkdown,
+  clearActiveSessionHistory,
+  loadGlobalLearningLevel,
+  ConversationSession,
+  FunctionalTutorMode,
+  UserLearningLevel,
+} from '../services/tutorConversationService';
 import { SUPPORTED_LANGUAGES } from '../knowledge/multilingualTutor';
 
 interface AIAssistantPanelProps {
@@ -196,15 +212,22 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   currentResult,
   onApplyToCalculator,
 }) => {
-  // Load saved preferences
+  // Load saved preferences and conversation session
   const initialSettings = loadTutorSettings();
+  const initialSession = getActiveSession();
+
+  const [currentSession, setCurrentSession] = useState<ConversationSession>(initialSession);
+  const [functionalMode, setFunctionalMode] = useState<FunctionalTutorMode>(
+    (initialSession.activeTutorMode as FunctionalTutorMode) || 'socratic'
+  );
+  const [learningLevel, setLearningLevel] = useState<UserLearningLevel>(() => loadGlobalLearningLevel());
 
   const [tutorMode, setTutorMode] = useState<TutorMode>(initialSettings.mode || 'tutor');
   const [learningObjective, setLearningObjective] = useState<LearningObjective>(
     initialSettings.learningObjective || 'concept'
   );
   const [difficulty, setDifficulty] = useState<DifficultyLevel>(
-    initialSettings.difficulty || 'intermediate'
+    learningLevel.difficulty || initialSettings.difficulty || 'intermediate'
   );
   const [selectedTopic, setSelectedTopic] = useState<MathTopic | 'auto'>(
     initialSettings.topicOverride || 'auto'
@@ -365,6 +388,14 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       setActiveProblem(sanitized);
       setActiveHints(generateProgressiveHints(sanitized));
       setHintLevel(1);
+      updateProblemContext(
+        {
+          rawProblem: sanitized,
+          topic: effectiveTopic,
+          difficulty,
+        },
+        currentSession.id
+      );
     }
 
     // Stop listening & active speech if user hits send
@@ -390,6 +421,15 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    addMessageToActiveSession(
+      {
+        role: 'user',
+        content: sanitized,
+        mode: functionalMode,
+      },
+      currentSession.id
+    );
+
     setInputPrompt('');
     setSpeechError(null);
     setIsLoading(true);
@@ -400,14 +440,15 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         messages,
         currentExpression,
         currentResult,
-        tutorMode === 'tutor' ? 'teach' : 'explain',
+        functionalMode as any,
         {
           tutorMode,
+          mode: functionalMode,
           learningObjective,
           difficulty,
           topic: effectiveTopic,
           hintLevel,
-          socraticMode,
+          socraticMode: functionalMode === 'socratic' || socraticMode,
           language: selectedLanguage,
         }
       );
@@ -427,6 +468,43 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+      addMessageToActiveSession(
+        {
+          role: 'assistant',
+          content: response.answer,
+          expression: response.expression || undefined,
+          formula: response.formula || undefined,
+          steps: response.steps,
+          isVerified: response.isVerified,
+          verificationNote: response.verificationNote,
+          mode: functionalMode,
+          quizData: response.quizItem,
+        },
+        currentSession.id
+      );
+
+      if (response.expression || response.isVerified) {
+        updateProblemContext(
+          {
+            authoritativeResult: response.expression || undefined,
+            derivationSteps: response.steps,
+          },
+          currentSession.id
+        );
+      }
+
+      // Adaptive learning progression in Quiz mode
+      if (
+        functionalMode === 'quiz' &&
+        (response.answer.toLowerCase().includes('correct!') || response.quizItem?.isCorrect !== undefined)
+      ) {
+        const wasCorrect =
+          response.answer.toLowerCase().includes('correct!') || response.quizItem?.isCorrect === true;
+        const updatedLevel = adaptLearningLevel(effectiveTopic, wasCorrect, currentSession.id);
+        setLearningLevel(updatedLevel);
+        setDifficulty(updatedLevel.difficulty);
+      }
+
       // Sync progressive hints with assistant response steps if present
       if (response.steps && response.steps.length > 0) {
         setActiveHints(generateProgressiveHints(sanitized, response.expression || undefined, response.steps, response.answer));
@@ -630,6 +708,10 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setIsSpeakingPaused(false);
     setSpeakingStepIndex(null);
 
+    clearActiveSessionHistory();
+    const fresh = getActiveSession();
+    setCurrentSession(fresh);
+
     setMessages([
       {
         id: 'welcome',
@@ -649,7 +731,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // Export full conversation to a downloadable Markdown (.md) file
   const handleExportConversation = () => {
     if (messages.length === 0) return;
-    const markdown = generateConversationMarkdown(messages);
+    const markdown = exportSessionMarkdown(currentSession.id) || generateConversationMarkdown(messages);
     downloadMarkdownFile(markdown);
     setIsExported(true);
     setTimeout(() => setIsExported(false), 2500);
@@ -968,51 +1050,125 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
         {/* Mode Selector & Pedagogy Controls Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-purple-500/20">
-          {/* 1. TUTOR MODE SWITCH: Assistant vs Tutor vs Solver Review */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0">
+          {/* Functional Tutor Mode Buttons: Socratic vs Step-by-Step vs Quiz vs Assistant vs Review */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0 flex-wrap">
             <button
-              id="btn-mode-assistant"
+              id="btn-mode-socratic"
               type="button"
-              onClick={() => setTutorMode('assistant')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                tutorMode === 'assistant'
+              onClick={() => {
+                setFunctionalMode('socratic');
+                setTutorMode('tutor');
+                setSocraticMode(true);
+                setStoredTutorMode('socratic', currentSession.id);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                functionalMode === 'socratic'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Socratic Mode: Guides with probing questions without revealing the answer immediately"
+            >
+              <Brain className="w-3.5 h-3.5" />
+              <span>Socratic</span>
+            </button>
+            <button
+              id="btn-mode-step-by-step"
+              type="button"
+              onClick={() => {
+                setFunctionalMode('step-by-step');
+                setTutorMode('solver-review');
+                setSocraticMode(false);
+                setStoredTutorMode('step-by-step', currentSession.id);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                functionalMode === 'step-by-step'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Step-by-Step Mode: Exhaustive numbered derivations citing mathematical rules and properties"
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+              <span>Step-by-Step</span>
+            </button>
+            <button
+              id="btn-mode-quiz"
+              type="button"
+              onClick={() => {
+                setFunctionalMode('quiz');
+                setTutorMode('tutor');
+                setSocraticMode(false);
+                setStoredTutorMode('quiz', currentSession.id);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                functionalMode === 'quiz'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Quiz Mode: Interactive question generation with options, hints, and automated grading"
+            >
+              <Award className="w-3.5 h-3.5" />
+              <span>Quiz</span>
+            </button>
+            <button
+              id="btn-mode-assistant"
+              type="button"
+              onClick={() => {
+                setFunctionalMode('assistant');
+                setTutorMode('assistant');
+                setSocraticMode(false);
+                setStoredTutorMode('explain', currentSession.id);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                functionalMode === 'assistant'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Assistant Mode: Direct calculations and mathematical answers"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Assistant</span>
             </button>
             <button
-              id="btn-mode-tutor"
-              type="button"
-              onClick={() => setTutorMode('tutor')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                tutorMode === 'tutor'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <GraduationCap className="w-3.5 h-3.5" />
-              <span>Tutor</span>
-            </button>
-            <button
               id="btn-mode-solver-review"
               type="button"
-              onClick={() => setTutorMode('solver-review')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                tutorMode === 'solver-review'
+              onClick={() => {
+                setFunctionalMode('check-work');
+                setTutorMode('solver-review');
+                setSocraticMode(false);
+                setStoredTutorMode('check-work', currentSession.id);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                functionalMode === 'check-work'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Review Mode: Mathematical audit and misconception check"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Solver Review</span>
+              <span>Review</span>
             </button>
           </div>
 
-          {/* Context Options: Topic + Difficulty + Learning Objective */}
+          {/* Context Options: Topic + Difficulty + Learning Objective + Context Badges */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
+            {/* Active Problem Context Badge */}
+            {currentSession.problemContext.rawProblem && (
+              <div
+                className="hidden xl:flex items-center gap-1.5 bg-indigo-950/50 px-2.5 py-1 rounded-xl border border-indigo-500/30 text-indigo-300 font-mono text-[11px] truncate max-w-[220px]"
+                title={`Active Context: ${currentSession.problemContext.rawProblem}`}
+              >
+                <Brain className="w-3 h-3 text-indigo-400 shrink-0" />
+                <span className="truncate">{currentSession.problemContext.rawProblem}</span>
+              </div>
+            )}
+
+            {/* User Learning Level & XP Badge */}
+            <div className="flex items-center gap-1.5 bg-purple-950/50 px-2.5 py-1.5 rounded-xl border border-purple-500/30 text-purple-300">
+              <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
+              <span className="capitalize font-semibold">{learningLevel.difficulty}</span>
+              <span className="text-purple-400/60">•</span>
+              <span className="font-mono text-[11px] text-amber-300 font-semibold">{learningLevel.experiencePoints} XP</span>
+            </div>
             {/* Topic Selector */}
             <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
               <span className="text-[11px] text-slate-400 font-medium">Topic:</span>

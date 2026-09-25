@@ -413,18 +413,21 @@ export function calculateRoi(params: RoiParams): FinanceResult {
   };
 }
 
-// Fixed baseline exchange rates relative to USD (clearly documented architecture)
-export const CURRENCY_RATES: Record<string, { name: string; rateToUSD: number; symbol: string }> = {
-  USD: { name: 'US Dollar', rateToUSD: 1.0, symbol: '$' },
-  EUR: { name: 'Euro', rateToUSD: 1.08, symbol: '€' },
-  GBP: { name: 'British Pound', rateToUSD: 1.28, symbol: '£' },
-  JPY: { name: 'Japanese Yen', rateToUSD: 0.0067, symbol: '¥' },
-  CAD: { name: 'Canadian Dollar', rateToUSD: 0.74, symbol: 'C$' },
-  AUD: { name: 'Australian Dollar', rateToUSD: 0.66, symbol: 'A$' },
-  CHF: { name: 'Swiss Franc', rateToUSD: 1.13, symbol: 'Fr' },
-  CNY: { name: 'Chinese Yuan', rateToUSD: 0.14, symbol: '¥' },
-  INR: { name: 'Indian Rupee', rateToUSD: 0.012, symbol: '₹' },
-};
+import { ISO_CURRENCIES, getCurrency } from '../services/currency/currencyRegistry';
+import { CurrencyRateProvider, BASELINE_USD_RATES } from '../services/currency/currencyRateProvider';
+
+// Dynamic 158+ currency registry mapping relative to USD (1 USD = X Currency)
+export const CURRENCY_RATES: Record<string, { name: string; rateToUSD: number; symbol: string }> = {};
+
+for (const curr of ISO_CURRENCIES) {
+  const rateToUSD = BASELINE_USD_RATES[curr.code] || 1.0;
+  // Note: rateToUSD here stores 1 Currency in USD = 1 / rateToUSD
+  CURRENCY_RATES[curr.code] = {
+    name: curr.name,
+    rateToUSD: rateToUSD > 0 ? 1 / rateToUSD : 1.0,
+    symbol: curr.symbol,
+  };
+}
 
 export function convertCurrency(
   fromCode: string,
@@ -432,20 +435,28 @@ export function convertCurrency(
   amount: number,
   customRate?: number
 ): { result: number; display: string; rateUsed: number; isManual: boolean } {
-  const from = CURRENCY_RATES[fromCode];
-  const to = CURRENCY_RATES[toCode];
+  const from = getCurrency(fromCode);
+  const to = getCurrency(toCode);
 
   if (!from || !to) {
     throw new Error('Unsupported currency selection');
   }
 
-  const rate = customRate && customRate > 0 ? customRate : from.rateToUSD / to.rateToUSD;
-  const converted = amount * rate;
+  if (customRate && customRate > 0) {
+    const converted = amount * customRate;
+    return {
+      result: sanitizeNumber(converted),
+      display: `${to.symbol} ${converted.toFixed(to.minorUnit || 2)}`,
+      rateUsed: sanitizeNumber(customRate),
+      isManual: true,
+    };
+  }
 
+  const conv = CurrencyRateProvider.convert(fromCode, toCode, amount, to.minorUnit || 2);
   return {
-    result: sanitizeNumber(converted),
-    display: `${to.symbol}${converted.toFixed(2)}`,
-    rateUsed: sanitizeNumber(rate),
-    isManual: !!customRate,
+    result: conv.resultAmount,
+    display: `${to.symbol} ${conv.resultAmount.toFixed(to.minorUnit || 2)}`,
+    rateUsed: sanitizeNumber(conv.rate),
+    isManual: false,
   };
 }

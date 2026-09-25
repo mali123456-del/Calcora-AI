@@ -30,6 +30,36 @@ import {
 export type { MathToolResult, MathVerificationBadge };
 export type ToolResult = MathToolResult;
 
+export function createDeterministicBadge(
+  verificationMethod: string,
+  verificationMessage: string,
+  confidence: number = 1.0
+): MathVerificationBadge {
+  return {
+    isVerified: true,
+    status: 'VERIFIED_DETERMINISTIC',
+    verificationMethod,
+    verificationMessage,
+    confidence,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function createAxiomaticBadge(
+  verificationMethod: string,
+  verificationMessage: string,
+  confidence: number = 1.0
+): MathVerificationBadge {
+  return {
+    isVerified: true,
+    status: 'VERIFIED_AXIOMATIC',
+    verificationMethod,
+    verificationMessage,
+    confidence,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 /**
  * 1. Calculate Tool
  * Deterministically evaluates arithmetic, powers, roots, trigonometry, and logarithms.
@@ -931,54 +961,99 @@ export function toolRetrieveKnowledge(query: string, topic?: string): MathToolRe
   }
 }
 
+export const ALLOWED_MATH_TOOLS = new Set([
+  'calculate',
+  'solveEquation',
+  'solveSystem',
+  'derivative',
+  'integrate',
+  'limit',
+  'statistics',
+  'matrixOperation',
+  'unitConversion',
+  'retrieveKnowledge',
+]);
+
+/**
+ * Defensive parameter validation against prototype pollution & malicious keys
+ */
+export function isSafeParameterObject(obj: any): boolean {
+  if (obj === null || typeof obj !== 'object') return true;
+  for (const key of Object.keys(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      return false;
+    }
+    if (typeof obj[key] === 'object' && obj[key] !== null) {
+      if (!isSafeParameterObject(obj[key])) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Unified Server-Side Tool Dispatcher: Execute Tool by Name
  * Safely handles tool calls from the AI Assistant or server endpoints.
+ * Enforces Phase 3 security boundaries, allowlists, and bounds validation.
  */
 export function executeMathTool(toolName: string, params: Record<string, any> = {}): MathToolResult {
-  switch (toolName) {
-    case 'calculate':
-      return toolCalculate(params.expression || '0', params.angleMode || 'DEG');
-    case 'solveEquation':
-      return toolSolveEquation(params.equation || params.expression || '');
-    case 'solveSystem':
-      return toolSolveSystem(
-        Number(params.a1 ?? 1),
-        Number(params.b1 ?? 1),
-        Number(params.c1 ?? 0),
-        Number(params.a2 ?? 1),
-        Number(params.b2 ?? -1),
-        Number(params.c2 ?? 0)
-      );
-    case 'derivative':
-      return toolDerivative(params.fnExpr || params.expression || 'x', Number(params.x0 ?? 0), params.order ?? 1);
-    case 'integrate':
-      return toolIntegrate(
-        params.fnExpr || params.expression || 'x',
-        Number(params.a ?? 0),
-        Number(params.b ?? 1),
-        Number(params.n ?? 1000)
-      );
-    case 'limit':
-      return toolLimit(params.fnExpr || params.expression || 'x', Number(params.c ?? 0), params.direction || 'both');
-    case 'statistics':
-      return toolStatistics(Array.isArray(params.data) ? params.data : []);
-    case 'matrixOperation':
-      return toolMatrix(params.op || 'det', params.A || [[1, 0], [0, 1]], params.B);
-    case 'unitConversion':
-      return toolUnitConversion(
-        Number(params.value ?? 1),
-        params.fromUnit || 'm',
-        params.toUnit || 'km',
-        params.category || 'length'
-      );
-    case 'retrieveKnowledge':
-      return toolRetrieveKnowledge(params.query || '', params.topic);
-    default:
+  const t0 = performance.now();
+
+  // 1. Tool Allowlist Check
+  if (!ALLOWED_MATH_TOOLS.has(toolName)) {
+    return {
+      success: false,
+      toolName: typeof toolName === 'string' ? toolName.slice(0, 50) : 'unknown',
+      expression: '',
+      result: '',
+      exactResult: '',
+      derivationSteps: [],
+      steps: [],
+      domainRestrictions: [],
+      restrictions: [],
+      verificationBadge: {
+        isVerified: false,
+        status: 'UNVERIFIED_MODEL',
+        verificationMethod: 'Tool Security Allowlist',
+        verificationMessage: `Tool "${toolName}" is not permitted on the authoritative execution layer.`,
+        confidence: 0,
+      },
+      error: `Security boundary rejected disallowed tool "${toolName}". Allowed: ${Array.from(ALLOWED_MATH_TOOLS).join(', ')}`,
+      executionTimeMs: Math.round(performance.now() - t0),
+    };
+  }
+
+  // 2. Prototype Pollution Defense
+  if (!isSafeParameterObject(params)) {
+    return {
+      success: false,
+      toolName,
+      expression: '',
+      result: '',
+      exactResult: '',
+      derivationSteps: [],
+      steps: [],
+      domainRestrictions: [],
+      restrictions: [],
+      verificationBadge: {
+        isVerified: false,
+        status: 'UNVERIFIED_MODEL',
+        verificationMethod: 'Prototype Pollution Defense',
+        verificationMessage: 'Malformed request rejected due to forbidden prototype property keys.',
+        confidence: 0,
+      },
+      error: 'Security boundary rejected malformed parameter object (prototype pollution detected).',
+      executionTimeMs: Math.round(performance.now() - t0),
+    };
+  }
+
+  // 3. String Input Length Limits
+  const stringValues = [params.expression, params.equation, params.fnExpr, params.query];
+  for (const s of stringValues) {
+    if (typeof s === 'string' && s.length > 1000) {
       return {
         success: false,
         toolName,
-        expression: JSON.stringify(params),
+        expression: s.slice(0, 100),
         result: '',
         exactResult: '',
         derivationSteps: [],
@@ -987,16 +1062,302 @@ export function executeMathTool(toolName: string, params: Record<string, any> = 
         restrictions: [],
         verificationBadge: {
           isVerified: false,
+          status: 'UNVERIFIED_MODEL',
+          verificationMethod: 'Input Size Boundary Check',
+          verificationMessage: 'Input expression exceeds maximum allowable size (1000 characters).',
+          confidence: 0,
+        },
+        error: 'Input string exceeds safe threshold of 1000 characters.',
+        executionTimeMs: Math.round(performance.now() - t0),
+      };
+    }
+  }
+
+  // 4. Safe Tool Execution with Bounds Enforcement
+  switch (toolName) {
+    case 'calculate':
+      return toolCalculate(params.expression || '0', params.angleMode || 'DEG');
+
+    case 'solveEquation':
+      return toolSolveEquation(params.equation || params.expression || '');
+
+    case 'solveSystem': {
+      const a1 = Number(params.a1 ?? 1);
+      const b1 = Number(params.b1 ?? 1);
+      const c1 = Number(params.c1 ?? 0);
+      const a2 = Number(params.a2 ?? 1);
+      const b2 = Number(params.b2 ?? -1);
+      const c2 = Number(params.c2 ?? 0);
+      if (![a1, b1, c1, a2, b2, c2].every(Number.isFinite)) {
+        return {
+          success: false,
+          toolName: 'solveSystem',
+          expression: 'System parameters',
+          result: '',
+          exactResult: '',
+          derivationSteps: ['System coefficients must be finite numbers'],
+          steps: ['System coefficients must be finite numbers'],
+          domainRestrictions: ['All coefficients a1, b1, c1, a2, b2, c2 must be finite real numbers'],
+          restrictions: ['All coefficients a1, b1, c1, a2, b2, c2 must be finite real numbers'],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Numeric Range Check',
+            verificationMessage: 'Non-finite coefficients rejected.',
+            confidence: 0,
+          },
+          error: 'Non-finite coefficient in linear system',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      return toolSolveSystem(a1, b1, c1, a2, b2, c2);
+    }
+
+    case 'derivative': {
+      const x0 = Number(params.x0 ?? 0);
+      const order = Number(params.order ?? 1);
+      if (!Number.isFinite(x0) || (order !== 1 && order !== 2)) {
+        return {
+          success: false,
+          toolName: 'derivative',
+          expression: params.fnExpr || 'x',
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Derivative evaluation point must be finite and order must be 1 or 2.'],
+          steps: ['Derivative evaluation point must be finite and order must be 1 or 2.'],
+          domainRestrictions: [],
+          restrictions: [],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Numeric Range Check',
+            verificationMessage: 'Invalid derivative order or non-finite evaluation point.',
+            confidence: 0,
+          },
+          error: 'Derivative order must be 1 or 2; evaluation point x0 must be finite.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      return toolDerivative(params.fnExpr || params.expression || 'x', x0, order as 1 | 2);
+    }
+
+    case 'integrate': {
+      const a = Number(params.a ?? 0);
+      const b = Number(params.b ?? 1);
+      let n = Number(params.n ?? 1000);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        return {
+          success: false,
+          toolName: 'integrate',
+          expression: params.fnExpr || 'x',
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Integration bounds must be finite real numbers.'],
+          steps: ['Integration bounds must be finite real numbers.'],
+          domainRestrictions: [],
+          restrictions: [],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Numeric Range Check',
+            verificationMessage: 'Non-finite integration bounds rejected.',
+            confidence: 0,
+          },
+          error: 'Non-finite integration bounds.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      // Clamp n between 2 and 10000 to prevent DoS CPU freeze
+      if (!Number.isFinite(n) || n < 2) n = 100;
+      if (n > 10000) n = 10000;
+      return toolIntegrate(params.fnExpr || params.expression || 'x', a, b, n);
+    }
+
+    case 'limit': {
+      const c = Number(params.c ?? 0);
+      if (!Number.isFinite(c)) {
+        return {
+          success: false,
+          toolName: 'limit',
+          expression: params.fnExpr || 'x',
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Limit approach point c must be a finite real number.'],
+          steps: ['Limit approach point c must be a finite real number.'],
+          domainRestrictions: [],
+          restrictions: [],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Numeric Range Check',
+            verificationMessage: 'Non-finite limit point rejected.',
+            confidence: 0,
+          },
+          error: 'Non-finite limit point c.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      return toolLimit(params.fnExpr || params.expression || 'x', c, params.direction || 'both');
+    }
+
+    case 'statistics': {
+      const data = Array.isArray(params.data) ? params.data : [];
+      if (data.length === 0) {
+        return {
+          success: false,
+          toolName: 'statistics',
+          expression: '[]',
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Dataset cannot be empty.'],
+          steps: ['Dataset cannot be empty.'],
+          domainRestrictions: ['Dataset must contain at least one numeric observation.'],
+          restrictions: ['Dataset must contain at least one numeric observation.'],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Dataset Validation',
+            verificationMessage: 'Empty dataset cannot be evaluated.',
+            confidence: 0,
+          },
+          error: 'Dataset is empty. At least one numeric element is required.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      if (data.length > 5000) {
+        return {
+          success: false,
+          toolName: 'statistics',
+          expression: `Dataset (${data.length} items)`,
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Dataset exceeds maximum size of 5,000 observations.'],
+          steps: ['Dataset exceeds maximum size of 5,000 observations.'],
+          domainRestrictions: ['Maximum dataset size is 5,000 elements.'],
+          restrictions: ['Maximum dataset size is 5,000 elements.'],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Dataset Size Check',
+            verificationMessage: 'Dataset size exceeds security threshold.',
+            confidence: 0,
+          },
+          error: 'Dataset exceeds 5000 elements.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      return toolStatistics(data);
+    }
+
+    case 'matrixOperation': {
+      const A = params.A;
+      const B = params.B;
+      const op = params.op || 'det';
+
+      if (!Array.isArray(A) || A.length === 0 || !Array.isArray(A[0])) {
+        return {
+          success: false,
+          toolName: 'matrixOperation',
+          expression: `matrix ${op}`,
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Matrix A must be a non-empty 2D array.'],
+          steps: ['Matrix A must be a non-empty 2D array.'],
+          domainRestrictions: [],
+          restrictions: [],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Matrix Dimension Validation',
+            verificationMessage: 'Invalid matrix representation.',
+            confidence: 0,
+          },
+          error: 'Matrix A must be a non-empty 2D array of numbers.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+
+      if (A.length > 10 || A[0].length > 10) {
+        return {
+          success: false,
+          toolName: 'matrixOperation',
+          expression: `Matrix ${A.length}x${A[0].length}`,
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Matrix dimensions exceed maximum allowed size (10x10).'],
+          steps: ['Matrix dimensions exceed maximum allowed size (10x10).'],
+          domainRestrictions: ['Maximum matrix dimensions are 10x10.'],
+          restrictions: ['Maximum matrix dimensions are 10x10.'],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Matrix Dimension Check',
+            verificationMessage: 'Matrix exceeds 10x10 size cap.',
+            confidence: 0,
+          },
+          error: 'Matrix dimensions exceed 10x10 threshold.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+
+      return toolMatrix(op, A, B);
+    }
+
+    case 'unitConversion': {
+      const val = Number(params.value ?? 1);
+      if (!Number.isFinite(val)) {
+        return {
+          success: false,
+          toolName: 'unitConversion',
+          expression: `${params.value} ${params.fromUnit} -> ${params.toUnit}`,
+          result: '',
+          exactResult: '',
+          derivationSteps: ['Conversion value must be a finite real number.'],
+          steps: ['Conversion value must be a finite real number.'],
+          domainRestrictions: [],
+          restrictions: [],
+          verificationBadge: {
+            isVerified: false,
+            status: 'UNVERIFIED_MODEL',
+            verificationMethod: 'Numeric Range Check',
+            verificationMessage: 'Non-finite numeric value.',
+            confidence: 0,
+          },
+          error: 'Non-finite value provided for unit conversion.',
+          executionTimeMs: Math.round(performance.now() - t0),
+        };
+      }
+      return toolUnitConversion(
+        val,
+        params.fromUnit || 'm',
+        params.toUnit || 'km',
+        params.category || 'length'
+      );
+    }
+
+    case 'retrieveKnowledge':
+      return toolRetrieveKnowledge(params.query || '', params.topic);
+
+    default:
+      return {
+        success: false,
+        toolName,
+        expression: '',
+        result: '',
+        exactResult: '',
+        derivationSteps: [],
+        steps: [],
+        domainRestrictions: [],
+        restrictions: [],
+        verificationBadge: {
+          isVerified: false,
+          status: 'UNVERIFIED_MODEL',
           verificationMethod: 'Tool Dispatcher',
           verificationMessage: `Unknown math tool: ${toolName}`,
           confidence: 0,
         },
-        verification: {
-          isVerified: false,
-          method: 'Tool Dispatcher',
-          message: `Unknown math tool: ${toolName}`,
-        },
         error: `Unknown math tool: ${toolName}`,
+        executionTimeMs: Math.round(performance.now() - t0),
       };
   }
 }
