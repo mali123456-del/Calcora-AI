@@ -547,6 +547,7 @@ export function evaluateRPN(rpn: Token[], angleMode: AngleMode = 'DEG'): number 
           'round',
           'exp',
           'recip',
+          'factorial',
         ].includes(fn)
       ) {
         if (stack.length < 1) {
@@ -674,6 +675,9 @@ export function evaluateRPN(rpn: Token[], angleMode: AngleMode = 'DEG'): number 
           case 'recip':
             if (x === 0) throw new Error('Division by zero: 1/0 is undefined');
             stack.push(1 / x);
+            break;
+          case 'factorial':
+            stack.push(factorial(x));
             break;
           default:
             throw new Error(`Unsupported function: ${fn}`);
