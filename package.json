@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Digital AI Scientific Calculator and mathematics workbench",
   "author": { "name": "Calcora AI", "email": "noreply@github.com" },
+  "desktopName": "calcora-ai",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -95,7 +96,6 @@
       "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
     },
     "linux": {
-      "desktopName": "calcora-ai",
       "target": [
         "AppImage",
         "deb"
