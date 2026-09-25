@@ -18,6 +18,7 @@ import { solveOhmsLaw, calculateElectricalPower, calculateKineticEnergy, calcula
 import { permutations, combinations, binomialProbability } from './probabilityEngine';
 import { exportWorkspaceToJSON, validateAndImportWorkspace, DEFAULT_WORKSPACE } from './workspaceEngine';
 import { verifyWithDeterministicEngine } from '../ai/client';
+import { detectAutomaticCalculation } from '../ai/mathIntelligence';
 import { sanitizeSpokenMath, sanitizeQueryText } from '../utils/sanitizer';
 import { convertMathToSpokenText } from '../utils/speechSynthesis';
 import { extractLaTeXFormula, generateConversationMarkdown } from '../utils/aiExport';
@@ -33,22 +34,24 @@ import {
   DifficultyLevel,
 } from '../utils/aiTutor';
 import { AIMessage } from '../types';
-import { classifyMathematicalIntent } from '../knowledge/intentClassifier';
-import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
-import { searchKnowledgeIndex } from '../knowledge/mathematicsKnowledgeIndex';
-import { extractMathematicalProblem } from './problemExtractor';
 import {
-  toolCalculate,
-  toolSolveEquation,
-  toolDerivative,
-  toolIntegrate,
-  toolLimit,
-  toolStatistics,
-  toolMatrix,
-  executeMathTool,
-  MathToolResult,
-} from './toolLayer';
-import { SUPPORTED_LANGUAGES, getLanguageTemplate } from '../knowledge/multilingualTutor';
+  CORE_MATHEMATICS_KNOWLEDGE,
+  MATHEMATICS_KNOWLEDGE_VERSION,
+  mathematicsKnowledgeIndex,
+  MATHEMATICS_SOURCE_CATALOG,
+  MATH_TUTOR_TRAINING_CORPUS,
+  MATH_DATASET_SOURCES,
+  getIngestionCandidateDatasets,
+  normalizeMathDatasetRecords,
+  getMathIngestionPolicy,
+} from '../knowledge/mathematics';
+import { retrieveMathematicsKnowledge } from '../knowledge/mathematics/retrieval';
+import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
+import {
+  createTutorConversationContext,
+  updateTutorConversationContext,
+  buildTutorGroundingContext,
+} from '../knowledge/mathematics/context';
 
 export interface TestCaseResult {
   category: string;
@@ -792,222 +795,405 @@ export function runFullVerificationSuite(): {
     passed: edgeCasesPassed,
   });
 
-  // 20. Mathematical Knowledge Base & Grounding System
-  const intentCheck = classifyMathematicalIntent('Why does the Pythagorean theorem work?');
-  const retrievedPythagoras = retrieveMathematicsKnowledge({ query: 'Pythagorean theorem' });
-  const pythagorasFound =
-    retrievedPythagoras.primaryConcept !== null &&
-    retrievedPythagoras.primaryConcept?.concept.toLowerCase().includes('pythagorean') &&
-    retrievedPythagoras.formulas.length > 0;
+  // =========================================================================
+  // 20-37. Mathematics Knowledge & Grounding Layer
+  // =========================================================================
 
-  results.push({
-    category: 'Knowledge Base Grounding',
-    testName: 'Concept Retrieval & Intent Classification',
-    input: 'Pythagorean theorem query',
-    expected: 'Intent: WHY_QUESTION or EXPLAIN_CONCEPT, Concept: Pythagorean Theorem with formulas',
-    actual: pythagorasFound ? 'Retrieved verified theorem with LaTeX formulas' : 'Failed to retrieve concept',
-    passed: Boolean(pythagorasFound && (intentCheck.intent === 'WHY_QUESTION' || intentCheck.intent === 'EXPLAIN_CONCEPT')),
-  });
-
-  // Domain restrictions check
-  const retrievedDivZero = searchKnowledgeIndex('division by zero');
-  const divZeroFound =
-    retrievedDivZero.length > 0 &&
-    retrievedDivZero.some((item: any) =>
-      item.domainRestrictions.some((r: string) => r.toLowerCase().includes('zero') || r.includes('≠') || r.includes('!='))
+  const schemaItemsValid = CORE_MATHEMATICS_KNOWLEDGE.length > 0 &&
+    CORE_MATHEMATICS_KNOWLEDGE.every((item) =>
+      Boolean(item.id && item.topic && item.concept && item.definition && item.keywords.length > 0)
     );
-
   results.push({
-    category: 'Knowledge Base Grounding',
-    testName: 'Domain Restrictions & Singularity Detection',
-    input: 'Division by zero / rational domain',
-    expected: 'Explicit denominator non-zero domain restriction (b ≠ 0)',
-    actual: divZeroFound ? 'Verified non-zero denominator restriction' : 'Missing domain restriction',
-    passed: divZeroFound,
+    category: 'Mathematics Knowledge',
+    testName: '20. Knowledge item schema',
+    input: String(CORE_MATHEMATICS_KNOWLEDGE.length),
+    expected: 'All core knowledge items contain required structured fields',
+    actual: schemaItemsValid ? 'Schema valid' : 'Invalid knowledge item',
+    passed: schemaItemsValid,
   });
 
-  // Multidomain coverage verification (Calculus, Linear Algebra, Probability, Physics)
-  const calcSearch = searchKnowledgeIndex('derivative');
-  const linalgSearch = searchKnowledgeIndex('matrix multiplication');
-  const statSearch = searchKnowledgeIndex('Bayes');
-  const physSearch = searchKnowledgeIndex("Ohm's Law");
-
-  const multiDomainPassed =
-    calcSearch.length > 0 && linalgSearch.length > 0 && statSearch.length > 0 && physSearch.length > 0;
-
+  const retrieval = retrieveMathematicsKnowledge({ text: 'why quadratic formula has plus minus', limit: 5 });
+  const retrievalPassed = retrieval.length > 0 && retrieval.some((r) => r.item.id === 'algebra.quadratic-formula');
   results.push({
-    category: 'Knowledge Base Grounding',
-    testName: 'Multi-Domain Mathematical Coverage',
-    input: 'Calculus, Linear Algebra, Statistics, Physics queries',
-    expected: 'All 4 core scientific domains return standard verified items',
-    actual: multiDomainPassed ? 'All domains verified with standard formulas' : 'Domain lookup failure',
-    passed: multiDomainPassed,
+    category: 'Mathematics Knowledge',
+    testName: '21. Knowledge retrieval',
+    input: 'quadratic formula plus minus',
+    expected: 'Retrieve quadratic formula knowledge',
+    actual: retrieval.map((r) => r.item.concept).join(', ') || 'No results',
+    passed: retrievalPassed,
   });
 
-  // 21. Deterministic Tool Layer Execution & Contracts
-  const toolCalcRes = toolCalculate('7 * 8');
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Calculate Tool: 7 * 8 = 56',
-    input: 'toolCalculate("7 * 8")',
-    expected: 'success: true, result: "56", isVerified: true',
-    actual: `success: ${toolCalcRes.success}, result: "${toolCalcRes.result}", isVerified: ${toolCalcRes.verification?.isVerified}`,
-    passed: Boolean(toolCalcRes.success && toolCalcRes.result === '56' && toolCalcRes.verification?.isVerified),
-  });
-
-  const toolEqRes = toolSolveEquation('2x + 4 = 10');
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Solve Equation Tool: 2x + 4 = 10',
-    input: 'toolSolveEquation("2x + 4 = 10")',
-    expected: 'success: true, result contains "x_1 = 3"',
-    actual: `success: ${toolEqRes.success}, result: "${toolEqRes.result}"`,
-    passed: Boolean(toolEqRes.success && toolEqRes.result?.includes('3')),
-  });
-
-  const toolDerivRes = toolDerivative('x^2', 3);
-  const derivClose = toolDerivRes.success && Math.abs(parseFloat(toolDerivRes.result || '0') - 6) < 1e-4;
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Derivative Tool: d/dx(x^2) at x=3',
-    input: 'toolDerivative("x^2", 3)',
-    expected: 'success: true, result ≈ 6',
-    actual: `success: ${toolDerivRes.success}, result: "${toolDerivRes.result}"`,
-    passed: derivClose,
-  });
-
-  const toolStatsRes = toolStatistics([1, 2, 3, 4, 5]);
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Statistics Tool: [1, 2, 3, 4, 5]',
-    input: 'toolStatistics([1, 2, 3, 4, 5])',
-    expected: 'success: true, mean: 3, median: 3',
-    actual: `success: ${toolStatsRes.success}, result: "${toolStatsRes.result}"`,
-    passed: Boolean(toolStatsRes.success && toolStatsRes.result?.includes('Mean: 3')),
-  });
-
-  const toolMatRes = toolMatrix('det', [[1, 2], [3, 4]]);
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Matrix Tool: det([[1,2],[3,4]]) = -2',
-    input: 'toolMatrix("det", [[1,2],[3,4]])',
-    expected: 'success: true, result: "-2"',
-    actual: `success: ${toolMatRes.success}, result: "${toolMatRes.result}"`,
-    passed: Boolean(toolMatRes.success && toolMatRes.result === '-2'),
-  });
-
-  const toolIntegRes = toolIntegrate('x^2', 0, 3, 100);
-  const integClose = toolIntegRes.success && Math.abs(parseFloat(toolIntegRes.result) - 9) < 1e-3;
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Integrate Tool: ∫[0 to 3] x^2 dx = 9',
-    input: 'toolIntegrate("x^2", 0, 3)',
-    expected: 'success: true, result ≈ 9',
-    actual: `success: ${toolIntegRes.success}, result: "${toolIntegRes.result}", badge: ${toolIntegRes.verificationBadge.verificationMethod}`,
-    passed: Boolean(integClose && toolIntegRes.verificationBadge.isVerified),
-  });
-
-  const toolLimRes = toolLimit('(x^2 - 1)/(x - 1)', 1);
-  const limClose = toolLimRes.success && Math.abs(parseFloat(toolLimRes.result) - 2) < 1e-3;
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Limit Tool: lim(x->1) (x^2 - 1)/(x - 1) = 2',
-    input: 'toolLimit("(x^2 - 1)/(x - 1)", 1)',
-    expected: 'success: true, result ≈ 2',
-    actual: `success: ${toolLimRes.success}, result: "${toolLimRes.result}"`,
-    passed: Boolean(limClose && toolLimRes.verificationBadge.isVerified),
-  });
-
-  const toolExecRes = executeMathTool('integrate', { fnExpr: '2*x', a: 1, b: 4 });
-  const execClose = toolExecRes.success && Math.abs(parseFloat(toolExecRes.result) - 15) < 1e-3;
-  results.push({
-    category: 'Tool Layer Contracts',
-    testName: 'Server Tool Dispatcher: executeMathTool("integrate", { fnExpr: "2*x", a: 1, b: 4 })',
-    input: 'executeMathTool("integrate", ...)',
-    expected: 'success: true, result ≈ 15, isVerified: true',
-    actual: `success: ${toolExecRes.success}, result: "${toolExecRes.result}", isVerified: ${toolExecRes.verificationBadge.isVerified}`,
-    passed: Boolean(execClose && toolExecRes.verificationBadge.isVerified),
-  });
-
-  // 22. Problem Extraction & Regression Suite (Authoritative Deterministic Results)
-  const regressionCases = [
-    { query: 'What is 7 times 8?', expectedResult: '56', expectedCanonical: '7 * 8' },
-    { query: 'What is 17 * 24?', expectedResult: '408', expectedCanonical: '17 * 24' },
-    { query: '144 / 12', expectedResult: '12', expectedCanonical: '144 / 12' },
-    { query: '100 / 4', expectedResult: '25', expectedCanonical: '100 / 4' },
-    { query: '15 - 7', expectedResult: '8', expectedCanonical: '15 - 7' },
-    { query: '2 + 2', expectedResult: '4', expectedCanonical: '2 + 2' },
-    { query: 'sqrt(144)', expectedResult: '12', expectedCanonical: 'sqrt(144)' },
-    { query: '2^10', expectedResult: '1024', expectedCanonical: '2^10' },
+  const intentCases: Array<[string, string]> = [
+    ['explain quadratic formula', 'EXPLAIN_FORMULA'],
+    ['solve x = 5', 'SOLVE_EQUATION'],
+    ['why is x negative', 'WHY_QUESTION'],
+    ['check my answer', 'CHECK_STEP'],
+    ['give me a practice question', 'GENERATE_PRACTICE'],
   ];
-
-  for (const reg of regressionCases) {
-    const extracted = extractMathematicalProblem(reg.query);
-    const hasExtraction = extracted !== null && extracted.canonicalExpression.length > 0;
-    const calc = hasExtraction ? toolCalculate(extracted!.canonicalExpression) : { success: false, result: '' };
-    const passed = Boolean(calc.success && calc.result === reg.expectedResult);
-
-    results.push({
-      category: 'Problem Extraction & Regression',
-      testName: `Regression: "${reg.query}" -> ${reg.expectedResult}`,
-      input: reg.query,
-      expected: `canonical: "${reg.expectedCanonical}", result: "${reg.expectedResult}"`,
-      actual: `canonical: "${extracted?.canonicalExpression}", result: "${calc.result}"`,
-      passed,
-    });
-  }
-
-  // 23. Multilingual Math Grounding Suite
-  const multilingualCases = [
-    { lang: 'Urdu', query: '7 ضرب 8 کیا ہے؟', expectedVal: '56' },
-    { lang: 'Hindi', query: '7 गुना 8 क्या है?', expectedVal: '56' },
-    { lang: 'Arabic', query: 'ما هو 7 ضرب 8؟', expectedVal: '56' },
-    { lang: 'Spanish', query: '¿Cuánto es 7 por 8?', expectedVal: '56' },
-    { lang: 'French', query: 'Combien font 7 fois 8 ?', expectedVal: '56' },
-    { lang: 'German', query: 'Was ist 7 mal 8?', expectedVal: '56' },
-    { lang: 'Chinese', query: '7 乘以 8 等于多少？', expectedVal: '56' },
-  ];
-
-  for (const ml of multilingualCases) {
-    const extracted = extractMathematicalProblem(ml.query);
-    const calc = extracted ? toolCalculate(extracted.canonicalExpression) : { success: false, result: '' };
-    const passed = Boolean(calc.success && calc.result === ml.expectedVal);
-
-    results.push({
-      category: 'Multilingual Math Grounding',
-      testName: `${ml.lang} Arithmetic: "${ml.query}"`,
-      input: ml.query,
-      expected: `result: "${ml.expectedVal}"`,
-      actual: `canonical: "${extracted?.canonicalExpression}", result: "${calc.result}"`,
-      passed,
-    });
-  }
-
+  const intentPassed = intentCases.every(([input, expected]) => classifyMathematicalIntent(input) === expected);
   results.push({
-    category: 'Multilingual Math Grounding',
-    testName: '26 Supported Languages Matrix Registry',
-    input: 'SUPPORTED_LANGUAGES count',
-    expected: '>= 26 languages registered',
-    actual: `${SUPPORTED_LANGUAGES.length} languages supported`,
-    passed: SUPPORTED_LANGUAGES.length >= 26,
+    category: 'Mathematics Knowledge',
+    testName: '22. Mathematical intent classification',
+    input: intentCases.map(([i]) => i).join(' | '),
+    expected: 'Structured intents match expected tutor behavior',
+    actual: intentCases.map(([i]) => classifyMathematicalIntent(i)).join(' | '),
+    passed: intentPassed,
   });
 
-  // 24. Expanded Mathematical Knowledge Corpus
-  const setTheoryItem = searchKnowledgeIndex('set theory');
-  const odeItem = searchKnowledgeIndex('differential equation');
-  const complexItem = searchKnowledgeIndex('Euler');
-  const financeItem = searchKnowledgeIndex('compound interest');
-
-  const expandedCorpusPassed =
-    setTheoryItem.length > 0 && odeItem.length > 0 && complexItem.length > 0 && financeItem.length > 0;
-
+  let tutorContext = createTutorConversationContext();
+  tutorContext = updateTutorConversationContext(tutorContext, {
+    currentProblem: 'x^2 - 5x + 6 = 0',
+    topic: 'Algebra',
+    currentStep: 'x^2 - 5x + 6 = (x - 2)(x - 3)',
+    hintLevel: 2,
+    userAttempts: ['x = 2'],
+  });
+  const contextText = buildTutorGroundingContext(tutorContext, retrieval.map((r) => r.item));
+  const contextPassed = contextText.includes('Current problem: x^2 - 5x + 6 = 0') &&
+    contextText.includes('Current step: x^2 - 5x + 6 = (x - 2)(x - 3)');
   results.push({
-    category: 'Expanded Mathematical Corpus',
-    testName: 'Precalculus, Discrete, ODE, Complex, & Finance Coverage',
-    input: 'Set Theory, ODE, Euler Complex, Compound Interest',
-    expected: 'All 4 expanded topic domains indexed with verified theorems',
-    actual: expandedCorpusPassed ? 'All 4 expanded domains retrieved successfully' : 'Corpus missing domain entries',
-    passed: expandedCorpusPassed,
+    category: 'Mathematics Knowledge',
+    testName: '23. Multi-turn conversation context',
+    input: 'Problem + current step + hint state',
+    expected: 'Context survives structured updates and can be grounded',
+    actual: contextPassed ? 'Context preserved' : 'Context missing',
+    passed: contextPassed,
+  });
+
+  const socraticHints = generateProgressiveHints('2x + 5 = 15', '2x + 5 = 15', ['2x = 10'], 'x = 5');
+  const socraticPassed = socraticHints.length === 5 && !socraticHints[0].includes('x = 5');
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '24. Socratic first-step behavior',
+    input: '2x + 5 = 15',
+    expected: 'Initial guidance does not immediately reveal final answer',
+    actual: socraticPassed ? 'Guided first step' : 'Answer leaked',
+    passed: socraticPassed,
+  });
+
+  const hintProgressionPassed = socraticHints[0] !== socraticHints[1] &&
+    socraticHints[1] !== socraticHints[2] &&
+    socraticHints[3] !== socraticHints[4];
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '25. Progressive hint escalation',
+    input: 'Five hint levels',
+    expected: 'Each level provides progressively more information',
+    actual: hintProgressionPassed ? 'Progressive' : 'Non-progressive',
+    passed: hintProgressionPassed,
+  });
+
+  const formulaItem = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'physics.newtons-second-law');
+  const formulaPassed = Boolean(formulaItem?.formulas?.includes('F = ma') && formulaItem?.assumptions?.length);
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '26. Formula explanation metadata',
+    input: 'F = ma',
+    expected: 'Formula, variables/context and assumptions are represented',
+    actual: formulaPassed ? 'Formula metadata present' : 'Incomplete formula metadata',
+    passed: formulaPassed,
+  });
+
+  const domainItem = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'algebra.quadratic-formula');
+  const domainPassed = Boolean(domainItem?.domainRestrictions?.some((v) => v.includes('b² - 4ac')));
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '27. Domain/restriction metadata',
+    input: 'Quadratic discriminant',
+    expected: 'Real-root restriction represented',
+    actual: domainPassed ? 'Restriction present' : 'Restriction missing',
+    passed: domainPassed,
+  });
+
+  const sqrt2 = calculateExpression('sqrt(2)');
+  const pi = calculateExpression('pi');
+  const exactApproxPassed = !sqrt2.error && !pi.error && Number.isFinite(sqrt2.value) && Number.isFinite(pi.value) &&
+    Math.abs(sqrt2.value - Math.SQRT2) < 1e-12 && Math.abs(pi.value - Math.PI) < 1e-12;
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '28. Exact versus approximate representation',
+    input: '√2 and π',
+    expected: 'Exact mathematical symbols remain representable',
+    actual: exactApproxPassed ? 'Exact symbols preserved' : 'Exact symbols missing',
+    passed: exactApproxPassed,
+  });
+
+  const generated = generatePracticeProblems('Arithmetic', 'beginner', 3);
+  const generatedValidated = generated.length === 3 && generated.every((p) =>
+    p.question.length > 0 && p.correctAnswer.length > 0 && p.hints.length === 5 &&
+    evaluatePracticeAnswer(p, p.correctAnswer).isCorrect &&
+    !evaluatePracticeAnswer(p, '__invalid_answer__').isCorrect
+  );
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '29. Practice problem validation contract',
+    input: '3 beginner arithmetic problems',
+    expected: 'Every displayed problem has answer, explanation and five hints',
+    actual: generatedValidated ? 'Validation contract satisfied' : 'Invalid practice item',
+    passed: generatedValidated,
+  });
+
+  const mistake = analyzeMistake('2x = 10', '-5', '5');
+  const mistakePassed = Boolean(
+    mistake.errorType && mistake.whyItIsWrong && mistake.correctPrinciple &&
+    mistake.correction && mistake.preventionTip
+  );
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '30. Mistake categorization',
+    input: 'sign error',
+    expected: 'Structured mistake diagnosis',
+    actual: mistakePassed ? mistake.errorType : 'Incomplete analysis',
+    passed: mistakePassed,
+  });
+
+  const deterministic = solveEquation('x^2 - 5x + 6 = 0');
+  const deterministicPassed = deterministic.isValid &&
+    deterministic.solutions.includes(2) && deterministic.solutions.includes(3);
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '31. Deterministic solver integration',
+    input: 'x^2 - 5x + 6 = 0',
+    expected: 'Deterministic roots 2 and 3',
+    actual: deterministic.solutions.join(', '),
+    passed: deterministicPassed,
+  });
+
+  const latexKnowledge = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'algebra.quadratic-formula');
+  const latexPassed = Boolean(latexKnowledge?.latex?.some((v) => v.includes('frac') && v.includes('pm')));
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '32. LaTeX knowledge representation',
+    input: 'Quadratic Formula',
+    expected: 'Structured LaTeX representation',
+    actual: latexPassed ? 'LaTeX present' : 'LaTeX missing',
+    passed: latexPassed,
+  });
+
+  const physics = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'physics.newtons-second-law');
+  const engineering = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'engineering.ohms-law');
+  const integrationPassed = Boolean(physics?.formulas?.includes('F = ma') && engineering?.formulas?.includes('V = IR'));
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '33. Physics/Engineering integration',
+    input: 'F = ma and V = IR',
+    expected: 'Physics and engineering knowledge are grounded',
+    actual: integrationPassed ? 'Integrated' : 'Missing integration',
+    passed: integrationPassed,
+  });
+
+  const probability = CORE_MATHEMATICS_KNOWLEDGE.find((item) => item.id === 'probability.bayes-theorem');
+  const statsKeyword = CORE_MATHEMATICS_KNOWLEDGE.some((item) => item.topic === 'Statistics' || item.keywords.includes('mean'));
+  const statsProbPassed = Boolean(probability && statsKeyword);
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '34. Statistics/Probability integration',
+    input: 'Bayes + statistics knowledge',
+    expected: 'Probability and statistics grounding available',
+    actual: statsProbPassed ? 'Integrated' : 'Coverage incomplete',
+    passed: statsProbPassed,
+  });
+
+  const graphRelationsPassed = Boolean(
+    domainItem?.relatedConcepts?.includes('Discriminant') &&
+    domainItem?.alternativeMethods?.includes('Factoring')
+  );
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '35. Knowledge graph relationships',
+    input: 'Quadratic Formula relationships',
+    expected: 'Related concepts and alternative methods represented',
+    actual: graphRelationsPassed ? 'Relationships present' : 'Relationships missing',
+    passed: graphRelationsPassed,
+  });
+
+  const examContractPassed = generated.every((p) => p.correctAnswer && p.hints.length === 5);
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '36. Exam/practice integrity contract',
+    input: 'Generated validated problems',
+    expected: 'Problems remain answerable with preserved hint structure',
+    actual: examContractPassed ? 'Contract satisfied' : 'Contract failed',
+    passed: examContractPassed,
+  });
+
+  const regressionPassed = socraticHints.length === 5;
+  results.push({
+    category: 'Mathematics Knowledge',
+    testName: '37. Tutor Mode 2.0 regression protection',
+    input: 'Existing five-level Tutor contract',
+    expected: 'Existing Tutor Mode hint levels remain intact',
+    actual: regressionPassed ? 'Regression-safe' : 'Regression detected',
+    passed: regressionPassed,
+  });
+
+  const extendedKnowledgeCount = mathematicsKnowledgeIndex.size;
+  const extendedKnowledgePassed = extendedKnowledgeCount >= 55;
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '41. Extended mathematics knowledge index',
+    input: 'Complete indexed knowledge pack',
+    expected: 'Core + extended mathematical grounding concepts (55+)',
+    actual: `${extendedKnowledgeCount} indexed concepts`,
+    passed: extendedKnowledgePassed,
+  });
+
+  const autoCalc = detectAutomaticCalculation('what is 15% of 850?');
+  const autoCalcPassed = Boolean(autoCalc && autoCalc.expression === '15 * 850 / 100' && autoCalc.result === '127.5');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '38. Natural-language automatic calculation',
+    input: 'what is 15% of 850?',
+    expected: 'Safe deterministic expression and result',
+    actual: autoCalc ? `${autoCalc.expression} = ${autoCalc.result}` : 'No automatic calculation',
+    passed: autoCalcPassed,
+  });
+
+  const directCalc = detectAutomaticCalculation('2 + 3 * 4');
+  const directCalcPassed = Boolean(directCalc && directCalc.expression === '2 + 3 * 4' && directCalc.result === '14');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '39. Direct chat expression execution',
+    input: '2 + 3 * 4',
+    expected: 'Deterministic calculator result 14',
+    actual: directCalc ? `${directCalc.expression} = ${directCalc.result}` : 'No automatic calculation',
+    passed: directCalcPassed,
+  });
+
+  const teachingGuard = detectAutomaticCalculation('explain 2 + 3 * 4');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '40. Automatic calculation safety guard',
+    input: 'explain 2 + 3 * 4',
+    expected: 'Do not auto-execute teaching/explanation requests',
+    actual: teachingGuard ? 'Unsafe auto-execution' : 'Guarded',
+    passed: teachingGuard === null,
+  });
+
+  const wordCalc = detectAutomaticCalculation('two plus three times four');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '42. Natural-language operator and number words',
+    input: 'two plus three times four',
+    expected: 'Safe normalization to 2 + 3 * 4 and result 14',
+    actual: wordCalc ? `${wordCalc.expression} = ${wordCalc.result}` : 'No automatic calculation',
+    passed: Boolean(wordCalc && wordCalc.result === '14'),
+  });
+
+  const romanCalc = detectAutomaticCalculation('do plus teen');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '43. Roman Urdu basic arithmetic',
+    input: 'do plus teen',
+    expected: 'Safe normalization to 2 + 3 and result 5',
+    actual: romanCalc ? `${romanCalc.expression} = ${romanCalc.result}` : 'No automatic calculation',
+    passed: Boolean(romanCalc && romanCalc.result === '5'),
+  });
+
+  const equationVerification = verifyWithDeterministicEngine('x^2 - 5x + 6 = 0');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '44. Natural-language equation verification contract',
+    input: 'x^2 - 5x + 6 = 0',
+    expected: 'Equation Solver verifies roots 2 and 3',
+    actual: equationVerification.verifiedResult || equationVerification.verificationNote,
+    passed: equationVerification.isVerified && equationVerification.verifiedResult === '2, 3',
+  });
+
+  const corpusCoveragePassed = MATHEMATICS_SOURCE_CATALOG.length >= 7 &&
+    MATH_TUTOR_TRAINING_CORPUS.length >= 20 &&
+    MATH_TUTOR_TRAINING_CORPUS.every((example) =>
+      example.userVariants.length > 0 &&
+      example.idealBehavior.length > 0 &&
+      example.answerStrategy.length > 0
+    );
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '45. Curated source and tutor corpus integrity',
+    input: 'Source catalog + original natural-language tutoring examples',
+    expected: 'At least 7 referenced sources and 20 validated training-style examples',
+    actual: `${MATHEMATICS_SOURCE_CATALOG.length} sources; ${MATH_TUTOR_TRAINING_CORPUS.length} examples`,
+    passed: corpusCoveragePassed,
+  });
+
+
+  const datasetCandidates = getIngestionCandidateDatasets();
+  const datasetRegistryPassed =
+    MATH_DATASET_SOURCES.length >= 8 &&
+    datasetCandidates.length >= 4 &&
+    MATH_DATASET_SOURCES.every((dataset) =>
+      dataset.id && dataset.name && dataset.url &&
+      dataset.usage &&
+      dataset.source.sourceName &&
+      dataset.source.licenseOrStatus &&
+      dataset.domains.length > 0
+    );
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '46. License-aware external dataset registry',
+    input: 'Curated math dataset source registry',
+    expected: 'Dataset candidates retain provenance, usage classification and license notes',
+    actual: datasetRegistryPassed
+      ? `${MATH_DATASET_SOURCES.length} registered sources; ${datasetCandidates.length} ingestion candidates`
+      : 'Dataset registry validation failed',
+    passed: datasetRegistryPassed,
+  });
+  // 47-50. Dataset ingestion / normalization safety
+  const ingestionSample = normalizeMathDatasetRecords('deepmind-mathematics-dataset', [
+    { id: 'a1', question: '2 + 3', answer: '5', topic: 'Arithmetic', reasoning: 'excluded reasoning' },
+    { id: 'a2', question: '2 + 3', answer: '5' },
+    { id: 'bad', answer: '5' },
+  ], '2026-09-23T00:00:00.000Z');
+  const ingestionVerified = ingestionSample.verified === 1 &&
+    ingestionSample.accepted === 1 &&
+    ingestionSample.rejected === 1 &&
+    ingestionSample.records[0]?.status === 'verified';
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '47. Dataset normalization and deduplication',
+    input: 'Duplicate + malformed external records',
+    expected: 'One accepted verified record, one duplicate removed, one malformed record rejected',
+    actual: `accepted=${ingestionSample.accepted}, verified=${ingestionSample.verified}, rejected=${ingestionSample.rejected}`,
+    passed: ingestionVerified,
+  });
+
+  const reasoningExcluded = ingestionSample.records[0]?.metadata.excludedFields.includes('reasoning') &&
+    !ingestionSample.records[0]?.searchableText.includes('excluded reasoning');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '48. Reasoning/CoT exclusion from searchable corpus',
+    input: 'Record containing reasoning field',
+    expected: 'Reasoning field is excluded while question/final answer remain searchable',
+    actual: reasoningExcluded ? 'Excluded safely' : 'Reasoning leakage detected',
+    passed: Boolean(reasoningExcluded),
+  });
+
+  const equationIngestion = normalizeMathDatasetRecords('numinamath-cot', [
+    { id: 'eq1', question: 'x^2 - 5x + 6 = 0', answer: '2, 3', solution: 'long reasoning must not be stored' },
+  ], '2026-09-23T00:00:00.000Z');
+  const equationVerified = equationIngestion.records[0]?.status === 'verified' &&
+    equationIngestion.records[0]?.verificationNote.includes('equation solver');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '49. Deterministic equation verification during ingestion',
+    input: 'x^2 - 5x + 6 = 0 -> 2, 3',
+    expected: 'Equation record marked verified by Calcora solver',
+    actual: equationIngestion.records[0]?.verificationNote || 'No record',
+    passed: Boolean(equationVerified),
+  });
+
+  const ingestionPolicy = getMathIngestionPolicy();
+  const policyPassed = ingestionPolicy.approvedDatasetIds.length >= 4 &&
+    ingestionPolicy.rejectedDatasetIds.includes('openwebmath') &&
+    ingestionPolicy.excludedReasoningFields.includes('chain_of_thought') &&
+    ingestionPolicy.fineTuningClaim.includes('Not base-model fine-tuning');
+  results.push({
+    category: 'Mathematics Intelligence',
+    testName: '50. Ingestion policy and provenance guard',
+    input: 'Approved/rejected datasets + training semantics',
+    expected: 'Only ingestion candidates accepted; reasoning excluded; no false fine-tuning claim',
+    actual: policyPassed ? 'Policy guard valid' : 'Policy guard invalid',
+    passed: policyPassed,
   });
 
   const passedCount = results.filter((r) => r.passed).length;

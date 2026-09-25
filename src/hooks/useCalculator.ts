@@ -494,6 +494,42 @@ export function useCalculator() {
     setError(null);
   }, []);
 
+  const applyExpressionAndCalculate = useCallback((expr: string) => {
+    const clean = expr.trim();
+    if (!clean) return;
+    setError(null);
+
+    const res = calculateExpression(clean, angleMode);
+    if (res.error) {
+      setExpression('');
+      setCurrentInput(clean);
+      setIsCalculated(false);
+      setError(res.error);
+      return;
+    }
+
+    setLastAnswer(res.value);
+    const displayVal = precision === 'auto' ? res.display : res.value.toFixed(precision);
+    setCurrentInput(displayVal);
+    setExpression(clean + ' =');
+    setIsCalculated(true);
+
+    const frac = decimalToFraction(res.value);
+    setFractionDisplay(frac ? `${frac.numerator}/${frac.denominator}` : null);
+    const eng = formatEngineeringNotation(res.value);
+    setEngineeringDisplay(eng ? eng.display : null);
+
+    const newItem: HistoryItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      expression: clean,
+      result: displayVal,
+      angleMode,
+      timestamp: Date.now(),
+      verified: true,
+    };
+    setHistory((prev) => [newItem, ...prev.slice(0, 99)]);
+  }, [angleMode, precision]);
+
   return {
     expression,
     currentInput,
@@ -543,6 +579,7 @@ export function useCalculator() {
     deleteHistoryItem,
     clearHistory,
     applyExpressionDirectly,
+    applyExpressionAndCalculate,
     toggleExactFraction,
   };
 }

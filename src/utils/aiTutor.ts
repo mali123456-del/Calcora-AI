@@ -8,7 +8,7 @@ import { calculateExpression, formatResult, sanitizeNumber } from '../engine/mat
 import { solveEquation } from '../engine/equationSolver';
 import { generateCalculationExplanation } from '../engine/stepExplainer';
 
-export type TutorMode = 'assistant' | 'tutor' | 'solver-review';
+export type TutorMode = 'assistant' | 'tutor' | 'solver-review' | 'socratic' | 'step-by-step' | 'quiz' | 'hint' | 'check-work' | 'challenge' | 'exam' | 'review';
 
 export type LearningObjective =
   | 'concept'
@@ -315,7 +315,7 @@ export function checkUserStep(
   }
 
   // Check for illegal transformation: division by zero
-  if (/\/\s*0(?![.\d])/i.test(cleanStep) || /divide\s+by\s+0/i.test(cleanStep)) {
+  if (/\/0(?![.\d])/i.test(cleanStep) || /divide\s+by\s+0/i.test(cleanStep)) {
     return {
       status: 'invalid_transformation',
       statusLabel: 'Invalid Transformation: Division by Zero',

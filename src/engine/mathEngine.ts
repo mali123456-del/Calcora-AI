@@ -234,8 +234,11 @@ export function tokenize(rawExpr: string): Token[] {
         }
       }
 
-      if (numStr === '.') {
-        throw new Error('Unexpected isolated decimal point');
+      if (numStr === '.' || (numStr.match(/\./g) || []).length > 1) {
+        throw new Error(`Invalid numeric literal: ${numStr}`);
+      }
+      if (!/^((\d+(\.\d*)?)|(\.\d+))([eE][+-]?\d+)?$/.test(numStr)) {
+        throw new Error(`Invalid numeric literal: ${numStr}`);
       }
 
       tokens.push({ type: 'NUMBER', value: numStr });
@@ -832,8 +835,12 @@ export function formatEngineeringNotation(value: number): {
   exponent: number;
   prefix: string;
 } {
-  if (value === 0 || !Number.isFinite(value)) {
+  if (value === 0) {
     return { display: '0', mantissa: '0', exponent: 0, prefix: '' };
+  }
+  if (!Number.isFinite(value)) {
+    const display = value > 0 ? 'Infinity' : '-Infinity';
+    return { display, mantissa: display, exponent: 0, prefix: '' };
   }
 
   const sign = value < 0 ? '-' : '';

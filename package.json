@@ -1,22 +1,40 @@
 {
-  "name": "react-example",
+  "name": "calcora-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild electron/main.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-electron/main.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "node -e \"const fs=require('fs'); for(const p of ['dist','dist-electron','server.js']) fs.rmSync(p,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/engine/tests/**/*.test.ts"
+    "electron": "electron .",
+    "dist:win": "npm run build && electron-builder --win nsis portable",
+    "test:core": "tsx tests/core.test.ts",
+    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run build",
+    "test:tutor": "tsx tests/tutorOrchestration.test.ts",
+    "test:intelligence": "tsx tests/aiIntelligence.test.ts",
+    "test:learning": "tsx tests/tutorLearningEngine.test.ts",
+    "evaluate:tutor": "tsx scripts/runTutorLearningEvaluation.ts",
+    "test:multilingual": "tsx tests/multilingualCurrency.test.ts",
+    "test:multilingual-input": "tsx tests/multilingualInputUnderstanding.test.ts",
+    "test:math": "tsx tests/mathEngineRegression.test.ts",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb",
+    "dist:all": "npm run build && electron-builder --win nsis portable && electron-builder --mac dmg zip && electron-builder --linux AppImage deb",
+    "test:multilingual-response": "tsx tests/multilingualResponseQuality.test.ts",
+    "test:desktop": "tsx tests/desktopRuntimeConfig.test.ts",
+    "test:tutor-guard": "tsx tests/tutorResponseGuard.test.ts",
+    "test:multilingual-adversarial": "tsx tests/multilingualAdversarial.test.ts",
+    "test:math-100": "tsx tests/mathRegression100.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "@supabase/supabase-js": "^2.117.2",
+    "@supabase/supabase-js": "^2.57.4",
     "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "katex": "^0.18.7",
@@ -27,7 +45,8 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "@vitejs/plugin-react": "^6.1.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -36,9 +55,50 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "electron": "^38.1.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "ai.calcora.desktop",
+    "productName": "Calcora AI",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
+    }
   }
 }

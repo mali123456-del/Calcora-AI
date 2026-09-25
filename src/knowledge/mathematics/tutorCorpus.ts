@@ -1,0 +1,188 @@
+export interface MathTutorTrainingExample {
+  id: string;
+  intent: string;
+  topic: string;
+  userVariants: string[];
+  idealBehavior: string;
+  answerStrategy: string[];
+  verificationRequired: boolean;
+}
+
+/**
+ * Original training-style examples written for Calcora.
+ * These are not copied chatbot transcripts. They teach the router/retriever
+ * how users naturally phrase mathematical requests.
+ */
+export const MATH_TUTOR_TRAINING_CORPUS: MathTutorTrainingExample[] = [
+  {
+    id: 'arithmetic-natural-language-01',
+    intent: 'CALCULATE',
+    topic: 'Arithmetic',
+    userVariants: ['what is 25% of 480', 'calculate 25 percent from 480', '480 ka 25 percent kitna hai'],
+    idealBehavior: 'Recognize percentage intent, convert to a safe expression, calculate deterministically, and explain briefly.',
+    answerStrategy: ['percentage normalization', 'deterministic calculation', 'unit/result check'],
+    verificationRequired: true,
+  },
+  {
+    id: 'arithmetic-natural-language-02',
+    intent: 'CALCULATE',
+    topic: 'Arithmetic',
+    userVariants: ['two plus three times four', '2+3×4 kitna hota hai', 'calculate 2 + 3 * 4'],
+    idealBehavior: 'Respect operator precedence and show multiplication before addition.',
+    answerStrategy: ['tokenize', 'precedence', 'deterministic calculation'],
+    verificationRequired: true,
+  },
+  {
+    id: 'algebra-solve-01',
+    intent: 'SOLVE_EQUATION',
+    topic: 'Algebra',
+    userVariants: ['solve x squared minus 5x plus 6 equals zero', 'x^2 - 5x + 6 = 0 solve karo', 'find roots of x²-5x+6'],
+    idealBehavior: 'Classify the equation, use a valid deterministic solver, preserve all real roots, and state restrictions.',
+    answerStrategy: ['equation normalization', 'degree detection', 'deterministic solving', 'verification'],
+    verificationRequired: true,
+  },
+  {
+    id: 'algebra-explain-01',
+    intent: 'WHY_QUESTION',
+    topic: 'Algebra',
+    userVariants: ['why do we use plus or minus in quadratic formula', 'quadratic formula mein ± kyun hota hai', 'why are there two roots'],
+    idealBehavior: 'Explain the two branches created by the square-root step without fabricating a theorem.',
+    answerStrategy: ['retrieve quadratic formula', 'explain square-root branches', 'give small example'],
+    verificationRequired: false,
+  },
+  {
+    id: 'trigonometry-natural-01',
+    intent: 'SOLVE_PROBLEM',
+    topic: 'Trigonometry',
+    userVariants: ['sin 30', 'what is sine of thirty degrees', 'sin 30 degree ki value'],
+    idealBehavior: 'Respect degree/radian context and use the unit-circle/special-angle knowledge.',
+    answerStrategy: ['angle-unit detection', 'unit-circle retrieval', 'deterministic calculation'],
+    verificationRequired: true,
+  },
+  {
+    id: 'calculus-derivative-01',
+    intent: 'DIFFERENTIATE',
+    topic: 'Calculus',
+    userVariants: ['differentiate x squared plus 3x', 'find derivative of x²+3x', 'x^2+3x ka derivative'],
+    idealBehavior: 'Apply the appropriate differentiation rules term-by-term and show the rule used.',
+    answerStrategy: ['power-rule retrieval', 'symbolic explanation', 'step verification where supported'],
+    verificationRequired: false,
+  },
+  {
+    id: 'calculus-integral-01',
+    intent: 'INTEGRATE',
+    topic: 'Calculus',
+    userVariants: ['integrate 2x', 'find integral of 2x dx', '2x ka integration'],
+    idealBehavior: 'Identify an antiderivative and include the constant of integration for an indefinite integral.',
+    answerStrategy: ['integration-rule retrieval', 'symbolic derivation', 'constant-of-integration check'],
+    verificationRequired: false,
+  },
+  {
+    id: 'statistics-mean-01',
+    intent: 'STATISTICS',
+    topic: 'Statistics',
+    userVariants: ['mean of 2 4 6 8', 'average nikal do 2,4,6,8 ka', 'what is the arithmetic mean'],
+    idealBehavior: 'Sum the observations and divide by the count; distinguish mean from median.',
+    answerStrategy: ['statistics retrieval', 'deterministic arithmetic', 'terminology check'],
+    verificationRequired: true,
+  },
+  {
+    id: 'probability-bayes-01',
+    intent: 'PROBABILITY',
+    topic: 'Probability',
+    userVariants: ['explain Bayes theorem', 'Bayes rule simple words mein samjhao', 'how does conditional probability reverse'],
+    idealBehavior: 'Retrieve Bayes and conditional probability definitions, explain priors/likelihood/evidence, and avoid unsupported numeric claims.',
+    answerStrategy: ['knowledge retrieval', 'concept explanation', 'worked example if useful'],
+    verificationRequired: false,
+  },
+  {
+    id: 'geometry-pythagorean-01',
+    intent: 'SOLVE_PROBLEM',
+    topic: 'Geometry',
+    userVariants: ['right triangle sides 3 and 4 find hypotenuse', '3 4 wali right triangle ki hypotenuse', 'use Pythagoras to find c'],
+    idealBehavior: 'Identify the hypotenuse, apply a²+b²=c², and verify the result numerically.',
+    answerStrategy: ['geometry retrieval', 'formula substitution', 'deterministic calculation'],
+    verificationRequired: true,
+  },
+  {
+    id: 'linear-algebra-inverse-01',
+    intent: 'EXPLAIN_CONCEPT',
+    topic: 'Linear Algebra',
+    userVariants: ['what is a matrix inverse', 'matrix inverse simple way mein', 'when does a matrix have an inverse'],
+    idealBehavior: 'Explain AA⁻¹=I and the nonsingular/determinant condition for square matrices.',
+    answerStrategy: ['knowledge retrieval', 'definition', 'condition', 'example'],
+    verificationRequired: false,
+  },
+  {
+    id: 'number-theory-gcd-01',
+    intent: 'SOLVE_PROBLEM',
+    topic: 'Number Theory',
+    userVariants: ['gcd of 84 and 30', '84 aur 30 ka HCF', 'find greatest common divisor'],
+    idealBehavior: 'Use the Euclidean algorithm and show remainders.',
+    answerStrategy: ['gcd retrieval', 'Euclidean algorithm', 'integer verification'],
+    verificationRequired: true,
+  },
+  {
+    id: 'physics-newton-01',
+    intent: 'PHYSICS_MATH',
+    topic: 'Physics',
+    userVariants: ['2 kg object accelerates at 3 m/s2 force?', 'F=ma se force nikalo', 'calculate net force'],
+    idealBehavior: 'Identify net force context, apply F=ma, and preserve units.',
+    answerStrategy: ['physics retrieval', 'unit-aware substitution', 'deterministic calculation'],
+    verificationRequired: true,
+  },
+  {
+    id: 'engineering-ohm-01',
+    intent: 'ENGINEERING_MATH',
+    topic: 'Engineering',
+    userVariants: ['5 ohm and 2 amp voltage?', 'V=IR calculate voltage', 'resistance 5 current 2 voltage'],
+    idealBehavior: 'Use Ohm’s law, preserve SI units, and verify arithmetic.',
+    answerStrategy: ['engineering retrieval', 'formula substitution', 'deterministic calculation'],
+    verificationRequired: true,
+  },
+  {
+    id: 'proof-induction-01',
+    intent: 'PROVE_STATEMENT',
+    topic: 'Discrete Mathematics',
+    userVariants: ['prove sum 1 to n formula by induction', 'induction proof kaise karte hain', 'show the induction steps'],
+    idealBehavior: 'Separate base case, induction hypothesis, and induction step.',
+    answerStrategy: ['induction retrieval', 'proof structure', 'algebraic verification'],
+    verificationRequired: false,
+  },
+  {
+    id: 'complex-euler-01',
+    intent: 'EXPLAIN_CONCEPT',
+    topic: 'Complex Numbers',
+    userVariants: ['explain e to the i theta', 'Euler formula simple explanation', 'complex exponential ka matlab'],
+    idealBehavior: 'Connect exponential and trigonometric forms using Euler’s formula and clearly define i and theta.',
+    answerStrategy: ['Euler retrieval', 'notation explanation', 'example'],
+    verificationRequired: false,
+  },
+  {
+    id: 'domain-restriction-01',
+    intent: 'FIND_ERROR',
+    topic: 'Algebra',
+    userVariants: ['can x be zero in 1/x', '1 divided by x domain kya hai', 'why x cannot be zero'],
+    idealBehavior: 'Identify division-by-zero as the restriction and explain it before solving further.',
+    answerStrategy: ['restriction retrieval', 'domain explanation'],
+    verificationRequired: false,
+  },
+  {
+    id: 'language-mixed-01',
+    intent: 'EXPLAIN_CONCEPT',
+    topic: 'General Mathematics',
+    userVariants: ['ye formula kahan use hota hai?', 'is theorem ko easy Roman Urdu mein samjhao', 'maths ka ye question simple English mein explain karo'],
+    idealBehavior: 'Preserve mathematical precision while adapting explanation language to the user.',
+    answerStrategy: ['intent detection', 'knowledge retrieval', 'language adaptation'],
+    verificationRequired: false,
+  },
+  {
+    id: 'ambiguous-math-01',
+    intent: 'CLARIFY',
+    topic: 'General Mathematics',
+    userVariants: ['solve this', 'ye kar do', 'answer nikal do'],
+    idealBehavior: 'Use active calculator/problem context when available; otherwise ask for the missing mathematical expression instead of guessing.',
+    answerStrategy: ['context lookup', 'safe clarification'],
+    verificationRequired: false,
+  },
+];

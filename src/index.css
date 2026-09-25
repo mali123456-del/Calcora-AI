@@ -23,26 +23,6 @@
   font-family: var(--font-display);
 }
 
-/* Subtle Theme Switching Cross-Fade Transitions */
-html,
-body,
-#calcora-root {
-  transition: background-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
-              color 450ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.theme-transitioning,
-.theme-transitioning header,
-.theme-transitioning main,
-.theme-transitioning nav,
-.theme-transitioning [role="dialog"],
-.theme-transitioning .transition-theme-card {
-  transition: background-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 450ms cubic-bezier(0.4, 0, 0.2, 1),
-              color 450ms cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 450ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 /* Custom scrollbar for mathematical expressions and panels */
 ::-webkit-scrollbar {
   width: 6px;
@@ -57,4 +37,19 @@ body,
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.4);
+}
+
+
+/* Calcora Lean Mode: reduce animation/paint cost on low-RAM devices. */
+html[data-calcora-lean='true'] *,
+html[data-calcora-lean='true'] *::before,
+html[data-calcora-lean='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+html[data-calcora-lean='true'] .backdrop-blur,
+html[data-calcora-lean='true'] [class*='backdrop-blur-'] {
+  backdrop-filter: none !important;
 }

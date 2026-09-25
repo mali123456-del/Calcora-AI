@@ -3,7 +3,29 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { AIMessage } from '../types';
+import { retrieveMathematicsKnowledge } from '../knowledge/mathematics/retrieval';
+import { mathematicsKnowledgeIndex, MATHEMATICS_KNOWLEDGE_VERSION, MATH_TUTOR_TRAINING_CORPUS, knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from '../knowledge/mathematics';
+import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
+import {
+  createTutorConversationContext,
+  updateTutorConversationContext,
+  buildTutorGroundingContext,
+  TutorConversationContext,
+} from '../knowledge/mathematics/context';
 import { askAIMathAssistant, AIResponse } from '../ai/client';
+import { loadTutorConversationState, appendTutorMessage, setTutorMode as persistTutorMode, updateTutorProblemContext } from '../services/tutorConversationService';
+import {
+  createTutorConversation,
+  saveTutorMessage,
+  logMathRetrieval,
+  saveMathAttempt,
+  upsertMathProgress,
+  retrieveMathRAG,
+  syncLocalMathCorpus,
+} from '../services/mathTutorPersistence';
+import { detectAutomaticCalculation } from '../ai/mathIntelligence';
+import { detectMathAudience } from '../knowledge/mathematics/audienceProfiles';
+import { TUTOR_LANGUAGES, getTutorLanguageCapability } from '../ai/tutorLanguages';
 import { sanitizeSpokenMath, sanitizeQueryText } from '../utils/sanitizer';
 import {
   speakText,
@@ -93,28 +115,12 @@ import {
   recordPracticeSessionResult,
   TutorStoredStats,
 } from '../utils/aiTutorStorage';
-import {
-  getActiveSession,
-  createNewSession,
-  listSessions,
-  saveSession,
-  updateProblemContext,
-  adaptLearningLevel,
-  setTutorMode as setStoredTutorMode,
-  addMessageToActiveSession,
-  exportSessionMarkdown,
-  clearActiveSessionHistory,
-  loadGlobalLearningLevel,
-  ConversationSession,
-  FunctionalTutorMode,
-  UserLearningLevel,
-} from '../services/tutorConversationService';
-import { SUPPORTED_LANGUAGES } from '../knowledge/multilingualTutor';
 
 interface AIAssistantPanelProps {
   currentExpression?: string;
   currentResult?: string;
   onApplyToCalculator?: (expr: string) => void;
+  onAutoCalculate?: (expr: string) => void;
 }
 
 const ALL_MATH_TOPICS: MathTopic[] = [
@@ -211,42 +217,27 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   currentExpression,
   currentResult,
   onApplyToCalculator,
+  onAutoCalculate,
 }) => {
-  // Load saved preferences and conversation session
+  // Load saved preferences
   const initialSettings = loadTutorSettings();
-  const initialSession = getActiveSession();
-
-  const [currentSession, setCurrentSession] = useState<ConversationSession>(initialSession);
-  const [functionalMode, setFunctionalMode] = useState<FunctionalTutorMode>(
-    (initialSession.activeTutorMode as FunctionalTutorMode) || 'socratic'
-  );
-  const [learningLevel, setLearningLevel] = useState<UserLearningLevel>(() => loadGlobalLearningLevel());
 
   const [tutorMode, setTutorMode] = useState<TutorMode>(initialSettings.mode || 'tutor');
   const [learningObjective, setLearningObjective] = useState<LearningObjective>(
     initialSettings.learningObjective || 'concept'
   );
   const [difficulty, setDifficulty] = useState<DifficultyLevel>(
-    learningLevel.difficulty || initialSettings.difficulty || 'intermediate'
+    initialSettings.difficulty || 'intermediate'
   );
   const [selectedTopic, setSelectedTopic] = useState<MathTopic | 'auto'>(
     initialSettings.topicOverride || 'auto'
   );
   const [socraticMode, setSocraticMode] = useState<boolean>(initialSettings.socraticMode ?? true);
   const [examMode, setExamMode] = useState<boolean>(initialSettings.examMode ?? false);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
+  const [tutorLanguage, setTutorLanguage] = useState<string>(() => localStorage.getItem('calcora_tutor_language') || 'en');
 
   // Messages state
-  const [messages, setMessages] = useState<AIMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        'Welcome to **AI Mathematical Tutor Mode 2.0**! I am designed to guide you through mathematical concepts, verify your individual steps, offer progressive 5-level hints, and deconstruct errors without immediately spoiling complete proofs.\n\nFormulas are rendered in LaTeX ($a^2 + b^2 = c^2$). Use the **Hint** and **Check My Step** tools below to learn actively!',
-      formula: 'a^2 + b^2 = c^2',
-      timestamp: Date.now(),
-    },
-  ]);
+  const [messages, setMessages] = useState<AIMessage[]>(() => loadTutorConversationState().messages);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -294,8 +285,21 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const [speakingStepIndex, setSpeakingStepIndex] = useState<number | null>(null);
   const [speechPlaybackRate, setSpeechPlaybackRate] = useState<number>(1.0);
 
+  const tutorContextRef = useRef<TutorConversationContext>(createTutorConversationContext());
+  const [groundedConcepts, setGroundedConcepts] = useState<string[]>([]);
+  const tutorConversationIdRef = useRef<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  const knowledgeGrounded = groundedConcepts.length > 0;
+
+  const changeTutorMode = (mode: TutorMode) => {
+    const next = persistTutorMode(loadTutorConversationState(), mode);
+    setTutorMode(mode);
+    setMessages(next.messages);
+    tutorConversationIdRef.current = null;
+  };
 
   // Topic detection
   const detectedTopic = detectMathTopic(inputPrompt || activeProblem, currentExpression);
@@ -383,19 +387,76 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
     if (!sanitized || isLoading) return;
 
+    const automaticCalculation = detectAutomaticCalculation(sanitized);
+    const audienceProfile = detectMathAudience(sanitized);
+
+    // Natural-language calculation requests are executed locally first so the
+    // calculator remains the numerical source of truth. The resulting expression
+    // is also typed into the main calculator through the existing callback.
+    if (automaticCalculation && onAutoCalculate) {
+      onAutoCalculate(automaticCalculation.expression);
+    }
+
+    const intent = classifyMathematicalIntent(sanitized);
+    const retrievedKnowledge = retrieveMathematicsKnowledge({
+      text: [sanitized, activeProblem, effectiveTopic].filter(Boolean).join(' '),
+      topic: effectiveTopic,
+      limit: 5,
+    });
+
+    let remoteRag: Awaited<ReturnType<typeof retrieveMathRAG>> = null;
+
+    try {
+      await syncLocalMathCorpus(
+        Array.from(mathematicsKnowledgeIndex.values()).map((item) =>
+          knowledgeToSupabaseRecord(item, MATHEMATICS_KNOWLEDGE_VERSION) as unknown as Record<string, unknown>
+        ),
+        MATH_TUTOR_TRAINING_CORPUS.map((example) =>
+          tutorExampleToSupabaseRecord(example) as unknown as Record<string, unknown>
+        ),
+      );
+    } catch (error) {
+      console.warn('Math corpus embedding sync unavailable; continuing with existing corpus:', error);
+    }
+    try {
+      remoteRag = await retrieveMathRAG([sanitized, activeProblem, effectiveTopic].filter(Boolean).join(' '), 5);
+    } catch (error) {
+      console.warn('Supabase math RAG unavailable; using local knowledge index:', error);
+    }
+
+    const remoteConcepts = remoteRag?.knowledge.map((item) => item.concept) ?? [];
+    setGroundedConcepts([
+      ...Array.from(new Set([...retrievedKnowledge.map((result) => result.item.concept), ...remoteConcepts])),
+    ].slice(0, 8));
+
+    tutorContextRef.current = updateTutorConversationContext(tutorContextRef.current, {
+      currentProblem: activeProblem,
+      topic: effectiveTopic,
+      difficulty,
+      learningObjective,
+      currentStep: userStepInput || undefined,
+      hintLevel,
+    });
+
+    const localGroundingContext = buildTutorGroundingContext(
+      tutorContextRef.current,
+      retrievedKnowledge.map((result) => result.item),
+    );
+    const remoteGroundingContext = remoteRag?.knowledge.length
+      ? `\n\nSUPABASE RAG RESULTS:\n${remoteRag.knowledge.map((item) =>
+          `Concept: ${item.concept}\nDefinition: ${item.definition}\nFormulas: ${item.formulas.join('; ')}\nExamples: ${item.examples.join('; ')}`
+        ).join('\n\n')}`
+      : '';
+    const groundingContext = (localGroundingContext + remoteGroundingContext).slice(0, 12000);
+    // Keep grounding data separate from visible chat content. The existing
+    // provider abstraction remains responsible for model execution.
+    void intent;
+
     // Update active problem if the query looks like a problem or equation
     if (sanitized.includes('=') || /[0-9]/.test(sanitized)) {
       setActiveProblem(sanitized);
       setActiveHints(generateProgressiveHints(sanitized));
       setHintLevel(1);
-      updateProblemContext(
-        {
-          rawProblem: sanitized,
-          topic: effectiveTopic,
-          difficulty,
-        },
-        currentSession.id
-      );
     }
 
     // Stop listening & active speech if user hits send
@@ -421,15 +482,40 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
-    addMessageToActiveSession(
-      {
-        role: 'user',
-        content: sanitized,
-        mode: functionalMode,
-      },
-      currentSession.id
-    );
+    appendTutorMessage(loadTutorConversationState(), userMsg);
+    const contextState = updateTutorProblemContext(loadTutorConversationState(), { rawProblem: sanitized, topic: effectiveTopic, difficulty });
+    void contextState;
 
+    // Persist the tutor session when Supabase auth is available. The local
+    // Tutor state remains the immediate fallback, so the feature never blocks
+    // calculation/tutoring when cloud persistence is unavailable.
+    void (async () => {
+      try {
+        if (!tutorConversationIdRef.current) {
+          tutorConversationIdRef.current = await createTutorConversation(
+            sanitized.slice(0, 80) || 'Math Tutor Session'
+          );
+        }
+        if (tutorConversationIdRef.current) {
+          await saveTutorMessage({
+            conversation_id: tutorConversationIdRef.current,
+            role: 'user',
+            content: sanitized,
+            status: 'complete',
+          });
+          await logMathRetrieval({
+            conversationId: tutorConversationIdRef.current,
+            queryText: sanitized,
+            knowledgeIds: [...retrievedKnowledge.map((result) => result.item.id), ...(remoteRag?.knowledge.map((item) => item.knowledge_id) ?? [])],
+            questionIds: remoteRag?.questions.map((item) => item.id) ?? [],
+            tutorExampleIds: remoteRag?.tutorExamples.map((item) => item.id) ?? [],
+            retrievalMode: remoteRag ? 'hybrid-local-plus-supabase-pgvector' : 'local-index',
+          });
+        }
+      } catch (error) {
+        console.warn('Math tutor cloud persistence unavailable:', error);
+      }
+    })();
     setInputPrompt('');
     setSpeechError(null);
     setIsLoading(true);
@@ -438,20 +524,34 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const response: AIResponse = await askAIMathAssistant(
         sanitized,
         messages,
-        currentExpression,
-        currentResult,
-        functionalMode as any,
+        automaticCalculation?.expression || currentExpression,
+        automaticCalculation?.result || currentResult,
+        tutorMode === 'tutor' ? 'teach' : 'explain',
         {
           tutorMode,
-          mode: functionalMode,
           learningObjective,
           difficulty,
           topic: effectiveTopic,
           hintLevel,
-          socraticMode: functionalMode === 'socratic' || socraticMode,
-          language: selectedLanguage,
+          socraticMode,
+          groundingContext,
+          groundedConcepts: retrievedKnowledge.map((result) => result.item.concept),
+          audienceProfile,
+          language: tutorLanguage,
         }
       );
+
+      // If the AI extracted a calculator-ready expression for an explicit
+      // calculation request, run it through the deterministic calculator too.
+      // Never auto-execute expressions for explanation/proof/teaching requests.
+      if (
+        onAutoCalculate &&
+        !automaticCalculation &&
+        response.expression &&
+        /\b(calculate|compute|evaluate|what is|what's|find)\b/i.test(sanitized)
+      ) {
+        onAutoCalculate(response.expression);
+      }
 
       const assistantMsg: AIMessage = {
         id: `ast-${Date.now()}`,
@@ -463,48 +563,53 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         isVerified: response.isVerified,
         verificationNote: response.verificationNote,
         timestamp: Date.now(),
-        knowledgeConceptsUsed: response.knowledgeConceptsUsed,
-        isGrounded: response.isGrounded,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      addMessageToActiveSession(
-        {
-          role: 'assistant',
-          content: response.answer,
-          expression: response.expression || undefined,
-          formula: response.formula || undefined,
-          steps: response.steps,
-          isVerified: response.isVerified,
-          verificationNote: response.verificationNote,
-          mode: functionalMode,
-          quizData: response.quizItem,
-        },
-        currentSession.id
-      );
+      appendTutorMessage(loadTutorConversationState(), assistantMsg);
 
-      if (response.expression || response.isVerified) {
-        updateProblemContext(
-          {
-            authoritativeResult: response.expression || undefined,
-            derivationSteps: response.steps,
-          },
-          currentSession.id
-        );
-      }
+      void (async () => {
+        try {
+          if (tutorConversationIdRef.current) {
+            await saveTutorMessage({
+              conversation_id: tutorConversationIdRef.current,
+              role: 'assistant',
+              content: response.answer,
+              model: 'gemini-3.8-flash',
+              provider: 'gemini',
+              status: 'complete',
+            });
+          }
 
-      // Adaptive learning progression in Quiz mode
-      if (
-        functionalMode === 'quiz' &&
-        (response.answer.toLowerCase().includes('correct!') || response.quizItem?.isCorrect !== undefined)
-      ) {
-        const wasCorrect =
-          response.answer.toLowerCase().includes('correct!') || response.quizItem?.isCorrect === true;
-        const updatedLevel = adaptLearningLevel(effectiveTopic, wasCorrect, currentSession.id);
-        setLearningLevel(updatedLevel);
-        setDifficulty(updatedLevel.difficulty);
-      }
+          if (automaticCalculation || response.expression || sanitized.includes('=')) {
+            await saveMathAttempt({
+              conversationId: tutorConversationIdRef.current ?? undefined,
+              topic: effectiveTopic,
+              problem: automaticCalculation?.expression || response.expression || sanitized,
+              submittedAnswer: response.verifiedResult || automaticCalculation?.result || currentResult,
+              expectedAnswer: response.isVerified ? response.verifiedResult : undefined,
+              isCorrect: response.isVerified,
+              verificationStatus: response.isVerified ? 'verified' : 'unverified',
+              verificationNote: response.verificationNote,
+              hintsUsed: Math.max(0, hintLevel - 1),
+              difficulty,
+            });
+          }
 
+          const currentStats = loadTutorStats();
+          await upsertMathProgress({
+            questionsAttempted: currentStats.totalProblemsAttempted + 1,
+            questionsCorrect: currentStats.totalCorrect + (response.isVerified ? 1 : 0),
+            hintsUsed: currentStats.hintsUsedCount + Math.max(0, hintLevel - 1),
+            mistakesCount: savedMistakes.length,
+            currentDifficulty: difficulty,
+            weakTopics: [effectiveTopic],
+            topicStats: { [effectiveTopic]: { lastSeenAt: new Date().toISOString() } },
+          });
+        } catch (error) {
+          console.warn('Math tutor progress persistence unavailable:', error);
+        }
+      })();
       // Sync progressive hints with assistant response steps if present
       if (response.steps && response.steps.length > 0) {
         setActiveHints(generateProgressiveHints(sanitized, response.expression || undefined, response.steps, response.answer));
@@ -553,6 +658,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
     try {
       const recognition = new SpeechRecognitionClass();
+      recognition.lang = tutorLanguage === 'auto' ? 'en-US' : getTutorLanguageCapability(tutorLanguage).mathLocale;
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
@@ -708,10 +814,6 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setIsSpeakingPaused(false);
     setSpeakingStepIndex(null);
 
-    clearActiveSessionHistory();
-    const fresh = getActiveSession();
-    setCurrentSession(fresh);
-
     setMessages([
       {
         id: 'welcome',
@@ -731,7 +833,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // Export full conversation to a downloadable Markdown (.md) file
   const handleExportConversation = () => {
     if (messages.length === 0) return;
-    const markdown = exportSessionMarkdown(currentSession.id) || generateConversationMarkdown(messages);
+    const markdown = generateConversationMarkdown(messages);
     downloadMarkdownFile(markdown);
     setIsExported(true);
     setTimeout(() => setIsExported(false), 2500);
@@ -1050,125 +1152,80 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
         {/* Mode Selector & Pedagogy Controls Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-purple-500/20">
-          {/* Functional Tutor Mode Buttons: Socratic vs Step-by-Step vs Quiz vs Assistant vs Review */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0 flex-wrap">
-            <button
-              id="btn-mode-socratic"
-              type="button"
-              onClick={() => {
-                setFunctionalMode('socratic');
-                setTutorMode('tutor');
-                setSocraticMode(true);
-                setStoredTutorMode('socratic', currentSession.id);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                functionalMode === 'socratic'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Socratic Mode: Guides with probing questions without revealing the answer immediately"
-            >
-              <Brain className="w-3.5 h-3.5" />
-              <span>Socratic</span>
-            </button>
-            <button
-              id="btn-mode-step-by-step"
-              type="button"
-              onClick={() => {
-                setFunctionalMode('step-by-step');
-                setTutorMode('solver-review');
-                setSocraticMode(false);
-                setStoredTutorMode('step-by-step', currentSession.id);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                functionalMode === 'step-by-step'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Step-by-Step Mode: Exhaustive numbered derivations citing mathematical rules and properties"
-            >
-              <ListOrdered className="w-3.5 h-3.5" />
-              <span>Step-by-Step</span>
-            </button>
-            <button
-              id="btn-mode-quiz"
-              type="button"
-              onClick={() => {
-                setFunctionalMode('quiz');
-                setTutorMode('tutor');
-                setSocraticMode(false);
-                setStoredTutorMode('quiz', currentSession.id);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                functionalMode === 'quiz'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Quiz Mode: Interactive question generation with options, hints, and automated grading"
-            >
-              <Award className="w-3.5 h-3.5" />
-              <span>Quiz</span>
-            </button>
+          {/* 1. TUTOR MODE SWITCH: Assistant vs Tutor vs Solver Review */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0">
             <button
               id="btn-mode-assistant"
               type="button"
-              onClick={() => {
-                setFunctionalMode('assistant');
-                setTutorMode('assistant');
-                setSocraticMode(false);
-                setStoredTutorMode('explain', currentSession.id);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                functionalMode === 'assistant'
+              onClick={() => changeTutorMode('assistant')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                tutorMode === 'assistant'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="Assistant Mode: Direct calculations and mathematical answers"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Assistant</span>
             </button>
             <button
-              id="btn-mode-solver-review"
+              id="btn-mode-tutor"
               type="button"
-              onClick={() => {
-                setFunctionalMode('check-work');
-                setTutorMode('solver-review');
-                setSocraticMode(false);
-                setStoredTutorMode('check-work', currentSession.id);
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                functionalMode === 'check-work'
+              onClick={() => changeTutorMode('tutor')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                tutorMode === 'tutor'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="Review Mode: Mathematical audit and misconception check"
+            >
+              <GraduationCap className="w-3.5 h-3.5" />
+              <span>Tutor</span>
+            </button>
+            <button
+              id="btn-mode-solver-review"
+              type="button"
+              onClick={() => changeTutorMode('solver-review')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                tutorMode === 'solver-review'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Review</span>
+              <span>Solver Review</span>
             </button>
           </div>
+          <label className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <span className="text-[11px] text-slate-400 font-medium">Language:</span>
+            <select value={tutorLanguage} onChange={(e) => { const value=e.target.value; setTutorLanguage(value); localStorage.setItem('calcora_tutor_language', value); }} className="bg-transparent text-cyan-300 font-semibold focus:outline-none cursor-pointer text-xs" title="Choose Tutor response language">
+              <option value="auto" className="bg-slate-900 text-white">Auto Detect</option>
+              {TUTOR_LANGUAGES.map(language => <option key={language.code} value={language.code} className="bg-slate-900 text-white">{language.nativeName} — {language.name}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <span className="text-[11px] text-slate-400 font-medium">Teaching mode:</span>
+            <select
+              id="tutor-mode-select"
+              value={tutorMode}
+              onChange={(e) => changeTutorMode(e.target.value as TutorMode)}
+              className="bg-transparent text-cyan-300 font-semibold focus:outline-none cursor-pointer text-xs"
+              title="Choose the active tutoring behavior"
+            >
+              <option value="assistant" className="bg-slate-900 text-white">Assistant</option>
+              <option value="tutor" className="bg-slate-900 text-white">Tutor</option>
+              <option value="socratic" className="bg-slate-900 text-white">Socratic</option>
+              <option value="step-by-step" className="bg-slate-900 text-white">Step-by-Step</option>
+              <option value="quiz" className="bg-slate-900 text-white">Quiz</option>
+              <option value="hint" className="bg-slate-900 text-white">Hint</option>
+              <option value="check-work" className="bg-slate-900 text-white">Check My Work</option>
+              <option value="challenge" className="bg-slate-900 text-white">Challenge</option>
+              <option value="exam" className="bg-slate-900 text-white">Exam</option>
+              <option value="review" className="bg-slate-900 text-white">Review</option>
+              <option value="solver-review" className="bg-slate-900 text-white">Solver Review</option>
+            </select>
+          </label>
 
-          {/* Context Options: Topic + Difficulty + Learning Objective + Context Badges */}
+          {/* Context Options: Topic + Difficulty + Learning Objective */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
-            {/* Active Problem Context Badge */}
-            {currentSession.problemContext.rawProblem && (
-              <div
-                className="hidden xl:flex items-center gap-1.5 bg-indigo-950/50 px-2.5 py-1 rounded-xl border border-indigo-500/30 text-indigo-300 font-mono text-[11px] truncate max-w-[220px]"
-                title={`Active Context: ${currentSession.problemContext.rawProblem}`}
-              >
-                <Brain className="w-3 h-3 text-indigo-400 shrink-0" />
-                <span className="truncate">{currentSession.problemContext.rawProblem}</span>
-              </div>
-            )}
-
-            {/* User Learning Level & XP Badge */}
-            <div className="flex items-center gap-1.5 bg-purple-950/50 px-2.5 py-1.5 rounded-xl border border-purple-500/30 text-purple-300">
-              <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
-              <span className="capitalize font-semibold">{learningLevel.difficulty}</span>
-              <span className="text-purple-400/60">•</span>
-              <span className="font-mono text-[11px] text-amber-300 font-semibold">{learningLevel.experiencePoints} XP</span>
-            </div>
             {/* Topic Selector */}
             <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
               <span className="text-[11px] text-slate-400 font-medium">Topic:</span>
@@ -1238,24 +1295,6 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <option value="review-mistakes" className="bg-slate-900 text-white">
                   Review mistakes
                 </option>
-              </select>
-            </div>
-
-            {/* Language Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
-              <span className="text-[11px] text-slate-400 font-medium">Lang:</span>
-              <select
-                id="select-tutor-language"
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="bg-transparent text-purple-300 font-semibold focus:outline-none cursor-pointer text-xs max-w-[130px]"
-                title="Select language for tutor explanations"
-              >
-                {SUPPORTED_LANGUAGES.map((lang) => (
-                  <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-200">
-                    {lang.name} ({lang.nativeName})
-                  </option>
-                ))}
               </select>
             </div>
 
@@ -1767,6 +1806,14 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
       )}
 
+      {knowledgeGrounded && (
+        <div className="flex items-center gap-2 flex-wrap text-[11px] text-emerald-300 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span className="font-semibold">Mathematics Knowledge Grounded</span>
+          <span className="text-slate-400">· {groundedConcepts.slice(0, 4).join(' · ')}</span>
+        </div>
+      )}
+
       {/* Main Conversation Flow */}
       <div className="flex-1 min-h-[260px] max-h-[480px] overflow-y-auto p-4 rounded-2xl bg-slate-950/60 dark:bg-slate-950/60 light:bg-white/80 border border-slate-800 dark:border-slate-800 light:border-slate-200 flex flex-col gap-4 shadow-inner">
         {messages.map((msg) => {
@@ -1977,17 +2024,6 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                         </button>
                       )}
                     </div>
-
-                    {/* Grounded Mathematical Knowledge Badge */}
-                    {msg.isGrounded && (
-                      <div
-                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
-                        title={msg.knowledgeConceptsUsed?.join(', ') || 'Grounded in verified mathematical corpus'}
-                      >
-                        <BookOpen className="w-3 h-3 text-cyan-400" />
-                        <span>Grounded: {msg.knowledgeConceptsUsed?.[0] || 'Core Math'}</span>
-                      </div>
-                    )}
 
                     {/* Deterministic Verification Handshake Badge */}
                     {msg.isVerified !== undefined && (

@@ -1,0 +1,5 @@
+import {calculateExpression} from '../engine/mathEngine';
+import {solveEquation} from '../engine/equationSolver';
+import {buildProvenance,type ProvenanceGraph} from './provenance';
+export interface VerificationResult {verified:boolean;result?:string;note:string;provenance:ProvenanceGraph;}
+export function verifyMath(expression:string):VerificationResult{let result='';try{const calc=calculateExpression(expression);if(!calc.error&&Number.isFinite(calc.value)){result=calc.display;const note='Verified by Calculator Engine';return {verified:true,result,note,provenance:buildProvenance(expression,result,true,note)};}}catch{/* equation fallback */}try{const eq=solveEquation(expression);if(eq.isValid&&eq.solutions.length){result=eq.solutions.join(', ');const note='Verified by Equation Solver';return {verified:true,result,note,provenance:buildProvenance(expression,result,true,note)};}}catch{/* remain unverified */}const note='No deterministic verification available';return {verified:false,note,provenance:buildProvenance(expression,'',false,note)};}

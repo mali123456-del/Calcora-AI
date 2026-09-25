@@ -1,524 +1,166 @@
-/**
- * Calcora AI - Tutor Conversation & State Management Service
- *
- * Persists and manages:
- * 1. Current mathematical problem context (expressions, topics, authoritative results, steps)
- * 2. User learning level (mastery by topic, difficulty tier, XP, streak)
- * 3. Message history across conversational sessions
- * 4. Functional tutor modes (Socratic, Step-by-Step, Quiz, Learn, Practice, Explain)
- *
- * Supports both browser localStorage and in-memory fallback for headless/test environments.
- */
+import type { AIMessage } from '../types';
+import type { DifficultyLevel, MathTopic, TutorMode } from '../utils/aiTutor';
 
-import { MathTopic, DifficultyLevel } from '../utils/aiTutor';
+export type TutorLearningLevel = DifficultyLevel;
 
-export type FunctionalTutorMode =
-  | 'socratic'
-  | 'step-by-step'
-  | 'quiz'
-  | 'learn'
-  | 'practice'
-  | 'explain'
-  | 'check-work'
-  | 'challenge'
-  | 'assistant';
-
-export interface MathProblemContext {
+export interface TutorProblemContext {
   rawProblem: string;
   canonicalExpression?: string;
-  problemType?: 'arithmetic' | 'equation' | 'calculus' | 'statistics' | 'trigonometry' | 'word_problem' | 'general';
-  topic: MathTopic | string;
+  problemType?: string;
+  topic: MathTopic;
   difficulty: DifficultyLevel;
-  authoritativeResult?: string | null;
-  derivationSteps?: string[];
-  currentSubstepIndex?: number;
-  lastCheckedStep?: string;
-  stepStatus?: 'correct' | 'partially_correct' | 'incorrect' | 'pending';
-  lastUpdated: number;
+  authoritativeResult?: string;
+  derivationSteps: string[];
+  currentSubstepIndex: number;
+  messageCount: number;
+  updatedAt: number;
 }
 
-export interface TopicMasteryRecord {
-  topic: string;
-  level: DifficultyLevel;
-  problemsAttempted: number;
-  problemsCorrect: number;
-  consecutiveSuccess: number;
-  lastActivityTimestamp: number;
-}
-
-export interface UserLearningLevel {
-  difficulty: DifficultyLevel;
-  experiencePoints: number;
+export interface TutorLearningState {
+  level: TutorLearningLevel;
+  xp: number;
   consecutiveCorrect: number;
   consecutiveMistakes: number;
-  topicMastery: Record<string, TopicMasteryRecord>;
-  lastAssessedTimestamp: number;
+  topicMastery: Partial<Record<MathTopic, number>>;
 }
 
-export interface TutorQuizItemData {
-  question: string;
-  options?: string[];
-  correctAnswer?: string;
-  userAnswer?: string;
-  isCorrect?: boolean;
-  explanation?: string;
-}
-
-export interface TutorMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-  expression?: string | null;
-  formula?: string | null;
-  steps?: string[];
-  isVerified?: boolean;
-  verificationNote?: string;
-  mode?: FunctionalTutorMode;
-  problemContextSnapshot?: Partial<MathProblemContext>;
-  quizData?: TutorQuizItemData;
-}
-
-export interface ConversationSession {
+export interface TutorConversationState {
   id: string;
   title: string;
+  mode: TutorMode;
+  messages: AIMessage[];
+  problemContext: TutorProblemContext | null;
+  learning: TutorLearningState;
   createdAt: number;
   updatedAt: number;
-  activeTutorMode: FunctionalTutorMode;
-  problemContext: MathProblemContext;
-  learningLevel: UserLearningLevel;
-  messages: TutorMessage[];
-  hintsUsedCount: number;
-  isPinned?: boolean;
-  isArchived?: boolean;
 }
 
-// Storage keys
-const SESSIONS_STORAGE_KEY = 'calcora_tutor_sessions_v2';
-const ACTIVE_SESSION_ID_KEY = 'calcora_tutor_active_session_id_v2';
-const GLOBAL_LEARNING_LEVEL_KEY = 'calcora_tutor_global_learning_level_v2';
+const STORAGE_KEY = 'calcora_tutor_conversation_state_v2';
+const MAX_MESSAGES = 200;
 
-// In-memory fallback for SSR and test execution
-let memorySessionsStore: Map<string, ConversationSession> = new Map();
-let memoryActiveSessionId: string | null = null;
-let memoryGlobalLearningLevel: UserLearningLevel | null = null;
-
-function isLocalStorageAvailable(): boolean {
+function storage(): Storage | null {
   try {
-    return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-export function getDefaultLearningLevel(): UserLearningLevel {
-  return {
-    difficulty: 'intermediate',
-    experiencePoints: 0,
-    consecutiveCorrect: 0,
-    consecutiveMistakes: 0,
-    topicMastery: {},
-    lastAssessedTimestamp: Date.now(),
-  };
+function persist(state: TutorConversationState): TutorConversationState {
+  const value = { ...state, updatedAt: Date.now() };
+  try { storage()?.setItem(STORAGE_KEY, JSON.stringify(value)); } catch {}
+  return value;
 }
 
-export function getDefaultProblemContext(): MathProblemContext {
-  return {
-    rawProblem: '',
-    canonicalExpression: '',
-    problemType: 'general',
-    topic: 'Algebra',
-    difficulty: 'intermediate',
-    authoritativeResult: null,
-    derivationSteps: [],
-    currentSubstepIndex: 0,
-    lastUpdated: Date.now(),
-  };
-}
-
-export function createDefaultSession(id?: string): ConversationSession {
-  const sessionId = id || `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+export function createTutorConversationState(id = `tutor-${Date.now()}`, title = 'Math Tutor Session'): TutorConversationState {
   const now = Date.now();
   return {
-    id: sessionId,
-    title: 'New Math Exploration',
+    id,
+    title,
+    mode: 'tutor',
+    messages: [{
+      id: `welcome-${now}`,
+      role: 'assistant',
+      content: 'Tutor session ready. Give me a problem, ask a question, or choose a tutoring mode.',
+      timestamp: now,
+    }],
+    problemContext: null,
+    learning: {
+      level: 'intermediate',
+      xp: 0,
+      consecutiveCorrect: 0,
+      consecutiveMistakes: 0,
+      topicMastery: {},
+    },
     createdAt: now,
     updatedAt: now,
-    activeTutorMode: 'socratic',
-    problemContext: getDefaultProblemContext(),
-    learningLevel: loadGlobalLearningLevel(),
-    messages: [
-      {
-        id: `welcome-${sessionId}`,
-        role: 'assistant',
-        content:
-          'Welcome! I am your **Interactive AI Math Tutor 2.0**.\n\nChoose a tutoring mode above (e.g. **Socratic**, **Step-by-Step**, or **Quiz**), enter any math problem or expression, and let us explore together!',
-        timestamp: now,
-        mode: 'socratic',
-      },
-    ],
-    hintsUsedCount: 0,
-    isPinned: false,
-    isArchived: false,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Global Learning Level Persistence
-// ---------------------------------------------------------------------------
-
-export function loadGlobalLearningLevel(): UserLearningLevel {
-  if (isLocalStorageAvailable()) {
-    try {
-      const raw = localStorage.getItem(GLOBAL_LEARNING_LEVEL_KEY);
-      if (raw) {
-        return { ...getDefaultLearningLevel(), ...JSON.parse(raw) };
-      }
-    } catch {}
-  }
-  if (!memoryGlobalLearningLevel) {
-    memoryGlobalLearningLevel = getDefaultLearningLevel();
-  }
-  return memoryGlobalLearningLevel;
-}
-
-export function saveGlobalLearningLevel(level: UserLearningLevel): void {
-  memoryGlobalLearningLevel = level;
-  if (isLocalStorageAvailable()) {
-    try {
-      localStorage.setItem(GLOBAL_LEARNING_LEVEL_KEY, JSON.stringify(level));
-    } catch {}
+export function loadTutorConversationState(): TutorConversationState {
+  try {
+    const raw = storage()?.getItem(STORAGE_KEY);
+    if (!raw) return createTutorConversationState();
+    const parsed = JSON.parse(raw) as TutorConversationState;
+    if (!parsed?.id || !Array.isArray(parsed.messages) || !parsed.learning) return createTutorConversationState();
+    return parsed;
+  } catch {
+    return createTutorConversationState();
   }
 }
 
-// ---------------------------------------------------------------------------
-// Session Collection Persistence
-// ---------------------------------------------------------------------------
-
-export function listSessions(): ConversationSession[] {
-  if (memorySessionsStore.size === 0 && isLocalStorageAvailable()) {
-    try {
-      const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
-      if (raw) {
-        const parsed: ConversationSession[] = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          for (const s of parsed) {
-            memorySessionsStore.set(s.id, s);
-          }
-        }
-      }
-    } catch {}
-  }
-
-  if (memorySessionsStore.size > 0) {
-    return Array.from(memorySessionsStore.values()).sort((a, b) => b.updatedAt - a.updatedAt);
-  }
-
-  // Create initial session if none exist without recursion
-  const initial = createDefaultSession();
-  memorySessionsStore.set(initial.id, initial);
-  memoryActiveSessionId = initial.id;
-
-  if (isLocalStorageAvailable()) {
-    try {
-      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify([initial]));
-      localStorage.setItem(ACTIVE_SESSION_ID_KEY, initial.id);
-    } catch {}
-  }
-
-  return [initial];
+export function appendTutorMessage(state: TutorConversationState, message: AIMessage): TutorConversationState {
+  const messages = [...state.messages, message].slice(-MAX_MESSAGES);
+  const nextContext = state.problemContext
+    ? { ...state.problemContext, messageCount: messages.length, updatedAt: Date.now() }
+    : state.problemContext;
+  return persist({ ...state, messages, problemContext: nextContext });
 }
 
-export function saveSessionsList(sessions: ConversationSession[]): void {
-  memorySessionsStore.clear();
-  for (const s of sessions) {
-    memorySessionsStore.set(s.id, s);
+export function updateTutorProblemContext(
+  state: TutorConversationState,
+  update: Partial<Omit<TutorProblemContext, 'messageCount' | 'updatedAt'>>,
+): TutorConversationState {
+  const current = state.problemContext;
+  const next: TutorProblemContext = {
+    rawProblem: update.rawProblem ?? current?.rawProblem ?? '',
+    canonicalExpression: update.canonicalExpression ?? current?.canonicalExpression,
+    problemType: update.problemType ?? current?.problemType,
+    topic: update.topic ?? current?.topic ?? 'Algebra',
+    difficulty: update.difficulty ?? current?.difficulty ?? state.learning.level,
+    authoritativeResult: update.authoritativeResult ?? current?.authoritativeResult,
+    derivationSteps: update.derivationSteps ?? current?.derivationSteps ?? [],
+    currentSubstepIndex: update.currentSubstepIndex ?? current?.currentSubstepIndex ?? 0,
+    messageCount: state.messages.length,
+    updatedAt: Date.now(),
+  };
+  return persist({ ...state, problemContext: next });
+}
+
+export function adaptTutorLearningLevel(state: TutorConversationState, outcome: { correct: boolean; topic?: MathTopic }): TutorConversationState {
+  const levels: TutorLearningLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
+  let consecutiveCorrect = outcome.correct ? state.learning.consecutiveCorrect + 1 : 0;
+  let consecutiveMistakes = outcome.correct ? 0 : state.learning.consecutiveMistakes + 1;
+  let level = state.learning.level;
+  let xp = state.learning.xp + (outcome.correct ? 25 : 5);
+  const index = levels.indexOf(level);
+  if (consecutiveCorrect >= 3 && index < levels.length - 1) {
+    level = levels[index + 1];
+    consecutiveCorrect = 0;
+  } else if (consecutiveMistakes >= 2 && index > 0) {
+    level = levels[index - 1];
+    consecutiveMistakes = 0;
   }
-
-  if (isLocalStorageAvailable()) {
-    try {
-      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    } catch {}
-  }
+  const topic = outcome.topic ?? state.problemContext?.topic;
+  const topicMastery = { ...state.learning.topicMastery };
+  if (topic) topicMastery[topic] = Math.min(100, Math.max(0, (topicMastery[topic] ?? 0) + (outcome.correct ? 5 : -3)));
+  return persist({ ...state, learning: { level, xp, consecutiveCorrect, consecutiveMistakes, topicMastery } });
 }
 
-export function getSession(id: string): ConversationSession | null {
-  if (memorySessionsStore.has(id)) {
-    return memorySessionsStore.get(id) || null;
-  }
-  const sessions = listSessions();
-  return sessions.find((s) => s.id === id) || null;
+export function setTutorMode(state: TutorConversationState, mode: TutorMode): TutorConversationState {
+  const reset = createTutorConversationState(state.id, state.title);
+  return persist({ ...reset, mode, createdAt: state.createdAt });
 }
 
-export function saveSession(session: ConversationSession): void {
-  const updatedSession = { ...session, updatedAt: Date.now() };
-  memorySessionsStore.set(session.id, updatedSession);
-
-  const sessions = Array.from(memorySessionsStore.values()).sort((a, b) => b.updatedAt - a.updatedAt);
-  if (isLocalStorageAvailable()) {
-    try {
-      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
-    } catch {}
-  }
+export function resetTutorSession(state: TutorConversationState): TutorConversationState {
+  return persist(createTutorConversationState(state.id, state.title));
 }
 
-export function getActiveSessionId(): string {
-  if (isLocalStorageAvailable()) {
-    try {
-      const stored = localStorage.getItem(ACTIVE_SESSION_ID_KEY);
-      if (stored) return stored;
-    } catch {}
-  }
-  if (memoryActiveSessionId) return memoryActiveSessionId;
-
-  const sessions = listSessions();
-  const firstId = sessions[0]?.id || 'default-session';
-  setActiveSessionId(firstId);
-  return firstId;
-}
-
-export function setActiveSessionId(id: string): void {
-  memoryActiveSessionId = id;
-  if (isLocalStorageAvailable()) {
-    try {
-      localStorage.setItem(ACTIVE_SESSION_ID_KEY, id);
-    } catch {}
-  }
-}
-
-export function getActiveSession(): ConversationSession {
-  const activeId = getActiveSessionId();
-  const session = getSession(activeId);
-  if (session) return session;
-
-  const newSession = createDefaultSession(activeId);
-  saveSession(newSession);
-  return newSession;
-}
-
-export function createNewSession(options?: {
-  title?: string;
-  mode?: FunctionalTutorMode;
-  initialTopic?: MathTopic | string;
-}): ConversationSession {
-  const session = createDefaultSession();
-  if (options?.title) session.title = options.title;
-  if (options?.mode) session.activeTutorMode = options.mode;
-  if (options?.initialTopic) session.problemContext.topic = options.initialTopic;
-
-  saveSession(session);
-  setActiveSessionId(session.id);
-  return session;
-}
-
-export function deleteSession(id: string): void {
-  let sessions = listSessions().filter((s) => s.id !== id);
-  if (sessions.length === 0) {
-    const fallback = createDefaultSession();
-    sessions = [fallback];
-    setActiveSessionId(fallback.id);
-  } else if (getActiveSessionId() === id) {
-    setActiveSessionId(sessions[0].id);
-  }
-  saveSessionsList(sessions);
-}
-
-export function clearActiveSessionHistory(): ConversationSession {
-  const session = getActiveSession();
-  session.messages = [
-    {
-      id: `welcome-${session.id}-${Date.now()}`,
-      role: 'assistant',
-      content: 'Session cleared. Ask a new mathematical question or choose a mode above.',
-      timestamp: Date.now(),
-      mode: session.activeTutorMode,
-    },
+export function exportTutorSessionMarkdown(state: TutorConversationState): string {
+  const lines = [
+    '# Math Tutor Session',
+    '',
+    `- Mode: ${state.mode}`,
+    `- Learning level: ${state.learning.level}`,
+    `- XP: ${state.learning.xp}`,
+    state.problemContext ? `- Problem: ${state.problemContext.rawProblem}` : '- Problem: none',
+    '',
+    '## Transcript',
+    '',
   ];
-  session.problemContext = getDefaultProblemContext();
-  session.updatedAt = Date.now();
-  saveSession(session);
-  return session;
-}
-
-// ---------------------------------------------------------------------------
-// Context & State Updates
-// ---------------------------------------------------------------------------
-
-export function updateProblemContext(
-  updates: Partial<MathProblemContext>,
-  sessionId?: string
-): MathProblemContext {
-  const targetSession = sessionId ? getSession(sessionId) || getActiveSession() : getActiveSession();
-  const updatedContext: MathProblemContext = {
-    ...targetSession.problemContext,
-    ...updates,
-    lastUpdated: Date.now(),
-  };
-
-  targetSession.problemContext = updatedContext;
-
-  // Auto-generate title if session still has placeholder
-  if (
-    updates.rawProblem &&
-    (targetSession.title === 'New Math Exploration' || targetSession.title.startsWith('Session'))
-  ) {
-    targetSession.title = updates.rawProblem.slice(0, 32).trim();
+  for (const message of state.messages) {
+    lines.push(`### ${message.role === 'user' ? 'User' : 'Tutor'}`, '', message.content, '');
+    if (message.steps?.length) lines.push(...message.steps.map((step, i) => `${i + 1}. ${step}`), '');
   }
-
-  saveSession(targetSession);
-  return updatedContext;
-}
-
-export function setTutorMode(
-  mode: FunctionalTutorMode,
-  sessionId?: string
-): ConversationSession {
-  const targetSession = sessionId ? getSession(sessionId) || getActiveSession() : getActiveSession();
-  targetSession.activeTutorMode = mode;
-  targetSession.updatedAt = Date.now();
-  saveSession(targetSession);
-  return targetSession;
-}
-
-export function addMessageToActiveSession(
-  message: Omit<TutorMessage, 'id' | 'timestamp'>,
-  sessionId?: string
-): TutorMessage {
-  const targetSession = sessionId ? getSession(sessionId) || getActiveSession() : getActiveSession();
-  const fullMessage: TutorMessage = {
-    ...message,
-    id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    timestamp: Date.now(),
-    problemContextSnapshot: message.problemContextSnapshot || { ...targetSession.problemContext },
-  };
-
-  targetSession.messages.push(fullMessage);
-
-  // If user provided a mathematical problem in message, update problem context
-  if (
-    message.role === 'user' &&
-    (message.content.includes('=') || /[0-9]/.test(message.content))
-  ) {
-    if (!targetSession.problemContext.rawProblem) {
-      targetSession.problemContext.rawProblem = message.content;
-      targetSession.problemContext.lastUpdated = Date.now();
-    }
-  }
-
-  saveSession(targetSession);
-  return fullMessage;
-}
-
-// ---------------------------------------------------------------------------
-// Adaptive Learning Level Engine
-// ---------------------------------------------------------------------------
-
-export function adaptLearningLevel(
-  topic: string,
-  wasCorrect: boolean,
-  sessionId?: string
-): UserLearningLevel {
-  const globalLevel = loadGlobalLearningLevel();
-  const currentLevel = { ...globalLevel };
-
-  const currentTopicRecord: TopicMasteryRecord = currentLevel.topicMastery[topic] || {
-    topic,
-    level: currentLevel.difficulty,
-    problemsAttempted: 0,
-    problemsCorrect: 0,
-    consecutiveSuccess: 0,
-    lastActivityTimestamp: Date.now(),
-  };
-
-  currentTopicRecord.problemsAttempted += 1;
-  currentTopicRecord.lastActivityTimestamp = Date.now();
-
-  const difficultyProgression: DifficultyLevel[] = ['beginner', 'intermediate', 'advanced', 'expert'];
-  const curIdx = difficultyProgression.indexOf(currentLevel.difficulty);
-
-  if (wasCorrect) {
-    currentLevel.experiencePoints += 25;
-    currentLevel.consecutiveCorrect += 1;
-    currentLevel.consecutiveMistakes = 0;
-    currentTopicRecord.problemsCorrect += 1;
-    currentTopicRecord.consecutiveSuccess += 1;
-
-    // Level up topic or global difficulty if 3 consecutive correct
-    if (currentLevel.consecutiveCorrect >= 3 && curIdx < difficultyProgression.length - 1) {
-      currentLevel.difficulty = difficultyProgression[curIdx + 1];
-      currentTopicRecord.level = currentLevel.difficulty;
-      currentLevel.consecutiveCorrect = 0;
-    }
-  } else {
-    currentLevel.experiencePoints = Math.max(0, currentLevel.experiencePoints + 5); // Participation XP
-    currentLevel.consecutiveCorrect = 0;
-    currentLevel.consecutiveMistakes += 1;
-    currentTopicRecord.consecutiveSuccess = 0;
-
-    // Step down difficulty if 2 consecutive mistakes on hard problems
-    if (currentLevel.consecutiveMistakes >= 2 && curIdx > 0) {
-      currentLevel.difficulty = difficultyProgression[curIdx - 1];
-      currentTopicRecord.level = currentLevel.difficulty;
-      currentLevel.consecutiveMistakes = 0;
-    }
-  }
-
-  currentTopicRecord.level = currentLevel.difficulty;
-  currentLevel.topicMastery[topic] = currentTopicRecord;
-  currentLevel.lastAssessedTimestamp = Date.now();
-
-  saveGlobalLearningLevel(currentLevel);
-
-  // Sync to active session
-  const targetSession = sessionId ? getSession(sessionId) || getActiveSession() : getActiveSession();
-  targetSession.learningLevel = currentLevel;
-  targetSession.problemContext.difficulty = currentLevel.difficulty;
-  saveSession(targetSession);
-
-  return currentLevel;
-}
-
-// ---------------------------------------------------------------------------
-// Export Session to Markdown
-// ---------------------------------------------------------------------------
-
-export function exportSessionMarkdown(sessionId?: string): string {
-  const session = sessionId ? getSession(sessionId) || getActiveSession() : getActiveSession();
-  const dateStr = new Date(session.createdAt).toLocaleDateString();
-
-  let md = `# Calcora AI Tutor Session: ${session.title}\n`;
-  md += `**Date**: ${dateStr}  \n`;
-  md += `**Mode**: ${session.activeTutorMode.toUpperCase()}  \n`;
-  md += `**Topic**: ${session.problemContext.topic} (${session.learningLevel.difficulty})  \n\n`;
-
-  if (session.problemContext.rawProblem) {
-    md += `### Active Problem Context\n`;
-    md += `**Problem**: ${session.problemContext.rawProblem}  \n`;
-    if (session.problemContext.authoritativeResult) {
-      md += `**Authoritative Result**: \`${session.problemContext.authoritativeResult}\` (Deterministic Verified)  \n`;
-    }
-    md += `\n---\n\n`;
-  }
-
-  md += `### Conversation Transcript\n\n`;
-  for (const m of session.messages) {
-    const roleName = m.role === 'user' ? '👤 Student' : m.role === 'assistant' ? '🎓 AI Tutor' : '⚙️ System';
-    md += `#### ${roleName} (${new Date(m.timestamp).toLocaleTimeString()})\n\n`;
-    md += `${m.content}\n\n`;
-    if (m.formula) {
-      md += `*Key Formula*: $$${m.formula.replace(/^\$+|\$+$/g, '')}$$\n\n`;
-    }
-    if (m.steps && m.steps.length > 0) {
-      md += `**Derivation Steps**:\n`;
-      m.steps.forEach((step, idx) => {
-        md += `${idx + 1}. ${step}\n`;
-      });
-      md += `\n`;
-    }
-    if (m.isVerified) {
-      md += `> ✅ **Deterministic Verification**: ${m.verificationNote || '100% verified by calculation engine'}\n\n`;
-    }
-  }
-
-  return md;
+  return lines.join('\n');
 }
