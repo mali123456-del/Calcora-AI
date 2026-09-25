@@ -12,6 +12,7 @@ export interface MultilingualInputAnalysis {
 }
 
 const SCRIPT_PATTERNS: Array<[string, RegExp]> = [
+  ['Latin', /[A-Za-z]/],
   ['Arabic', /[\u0600-\u06ff]/], ['Devanagari', /[\u0900-\u097f]/], ['Bengali', /[\u0980-\u09ff]/],
   ['Gurmukhi', /[\u0a00-\u0a7f]/], ['Gujarati', /[\u0a80-\u0aff]/], ['Tamil', /[\u0b80-\u0bff]/],
   ['Telugu', /[\u0c00-\u0c7f]/], ['Kannada', /[\u0c80-\u0cff]/], ['Malayalam', /[\u0d00-\u0d7f]/],
