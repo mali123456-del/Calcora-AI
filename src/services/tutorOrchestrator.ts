@@ -13,7 +13,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { extractMathematicalProblem } from '../engine/problemExtractor';
+import { extractMathProblem } from '../engine/problemExtractor';
 import {
   toolCalculate,
   toolSolveEquation,
@@ -348,33 +348,23 @@ export async function orchestrateTutor(
   // --------------------------------------------------------------------------
   // Step 1: Deterministic-First Mathematical Computation
   // --------------------------------------------------------------------------
-  const extracted = extractMathematicalProblem(prompt);
+  const extracted = extractMathProblem(prompt);
   let deterministicResult: MathToolResult | null = null;
 
-  if (extracted) {
-    switch (extracted.type) {
-      case 'arithmetic':
-        deterministicResult = toolCalculate(extracted.canonicalExpression);
-        break;
-      case 'equation':
-        deterministicResult = toolSolveEquation(extracted.canonicalExpression);
-        break;
-      case 'calculus_derivative':
-        deterministicResult = toolDerivative(extracted.canonicalExpression, 0);
-        break;
-      case 'calculus_integral':
-        deterministicResult = toolIntegrate(
-          extracted.canonicalExpression,
-          extracted.parameters?.a ?? 0,
-          extracted.parameters?.b ?? 1
-        );
-        break;
-      case 'statistics':
-        if (extracted.parameters?.data) {
-          deterministicResult = toolStatistics(extracted.parameters.data);
-        }
-        break;
-    }
+  switch (extracted.kind) {
+    case 'calculate':
+      deterministicResult = toolCalculate({ expression: extracted.expression ?? '' });
+      break;
+    case 'solveEquation':
+      deterministicResult = toolSolveEquation({ equation: extracted.equation ?? '' });
+      break;
+    case 'integrate':
+      deterministicResult = toolIntegrate({
+        fnExpr: extracted.fnExpr ?? '',
+        a: extracted.a ?? 0,
+        b: extracted.b ?? 1,
+      });
+      break;
   }
 
   // Fallback 1: Direct equation or calculation attempt if problem extractor did not yield a result
