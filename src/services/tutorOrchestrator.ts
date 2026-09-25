@@ -38,6 +38,8 @@ import {
   MathProblemContext,
   UserLearningLevel,
   TutorQuizItemData,
+  isTutorFollowUpPrompt,
+  formatTutorContinuityContext,
 } from './tutorConversationService';
 
 export interface TutorOrchestrationOptions {
@@ -578,14 +580,36 @@ Return your response in clean JSON matching:
   }
 }`;
 
-  const historyContext = conversation
-    .slice(-6)
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n');
+  const followUpDetected = Boolean(problemContext) && isTutorFollowUpPrompt(prompt);
+  const continuityContext = formatTutorContinuityContext({
+    isFollowUp: followUpDetected,
+    reason: followUpDetected
+      ? (/\b(what next|next step|continue|go on|keep going)\b/i.test(prompt)
+        ? 'continuation'
+        : /\b(this|that|it|the step|the equation|the problem|the answer)\b/i.test(prompt)
+          ? 'referential'
+          : 'explicit')
+      : 'new-problem',
+    activeProblem: problemContext
+      ? {
+          rawProblem: problemContext.rawProblem || '',
+          canonicalExpression: problemContext.canonicalExpression,
+          problemType: problemContext.problemType,
+          topic: problemContext.topic || topic,
+          difficulty: problemContext.difficulty || difficulty,
+          authoritativeResult: problemContext.authoritativeResult,
+          derivationSteps: problemContext.derivationSteps || [],
+          currentSubstepIndex: problemContext.currentSubstepIndex ?? 0,
+          messageCount: problemContext.messageCount || conversation.length,
+          updatedAt: problemContext.updatedAt || Date.now(),
+        }
+      : null,
+    learningLevel: learningLevel?.level || difficulty,
+    topicMastery: learningLevel?.topicMastery || {},
+    recentTurns: conversation.slice(-6),
+  });
 
-  const fullPrompt = historyContext
-    ? `${historyContext}\nUser: ${prompt}`
-    : prompt;
+  const fullPrompt = `${continuityContext}\nUser: ${prompt}`;
 
   const candidateModels = [
     'gemini-3.8-flash',
