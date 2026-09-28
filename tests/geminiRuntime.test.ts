@@ -18,6 +18,8 @@ assert.equal(parseGeminiJsonResponse(''), null);
 assert.equal(parseGeminiJsonResponse('not json'), null);
 assert.equal(parseGeminiJsonResponse('{"answer":""}'), null);
 assert.equal(parseGeminiJsonResponse('{"answer":"42","steps":"not-an-array"}'), null);
+assert.equal(parseGeminiJsonResponse(JSON.stringify({ answer: '42', steps: [42] })), null);
+assert.equal(parseGeminiJsonResponse(JSON.stringify({ answer: 'x'.repeat(65537) })), null);
 assert.equal(parseGeminiJsonResponse('["42"]'), null);
 
 assert.equal(isValidGeminiResponse({ answer: 'valid' }), true);
