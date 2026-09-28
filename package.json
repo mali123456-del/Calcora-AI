@@ -20,7 +20,7 @@
     "electron": "electron .",
     "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
     "test:core": "tsx tests/core.test.ts",
-    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:tutor-conversation && npm run test:gemini-availability && npm run test:gemini-runtime && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run test:data-transfer && npm run test:agent-data && npm run build",
+    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:tutor-conversation && npm run test:gemini-availability && npm run test:gemini-runtime && npm run test:gemini-status && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run test:data-transfer && npm run test:agent-data && npm run build",
     "test:tutor": "tsx tests/tutorOrchestration.test.ts",
     "test:intelligence": "tsx tests/aiIntelligence.test.ts",
     "test:learning": "tsx tests/tutorLearningEngine.test.ts",
@@ -40,7 +40,8 @@
     "test:gemini-runtime": "tsx tests/geminiRuntime.test.ts",
     "test:data-transfer": "tsx tests/dataTransferService.test.ts",
     "test:agent-data": "tsx tests/agentDataLayer.test.ts",
-    "test:tutor-conversation": "tsx tests/tutorConversationService.test.ts"
+    "test:tutor-conversation": "tsx tests/tutorConversationService.test.ts",
+    "test:gemini-status": "tsx tests/geminiStatus.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
