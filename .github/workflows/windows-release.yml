@@ -1,0 +1,54 @@
+name: Calcora AI Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Full regression suite
+        run: npm run verify
+
+      - name: Build Windows NSIS and portable artifacts
+        run: npm run dist:win
+
+      - name: Verify Windows artifacts
+        shell: pwsh
+        run: |
+          $artifacts = Get-ChildItem -Path dist -Recurse -File -Include *.exe
+          if (-not $artifacts) { throw "No Windows .exe artifacts were generated." }
+          $nsis = $artifacts | Where-Object { $_.Name -notmatch "portable" }
+          $portable = $artifacts | Where-Object { $_.Name -match "portable" }
+          if (-not $nsis) { throw "NSIS installer artifact was not found." }
+          if (-not $portable) { throw "Portable executable artifact was not found." }
+          $artifacts | Select-Object FullName,Length | Format-Table -AutoSize
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcora-ai-windows-release
+          path: |
+            dist/*.exe
+            dist/**/*.exe
+          if-no-files-found: error
