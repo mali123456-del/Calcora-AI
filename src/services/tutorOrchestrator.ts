@@ -32,6 +32,7 @@ import {
   LearningObjective,
   DifficultyLevel,
   HintLevel,
+  detectMathTopic,
 } from '../utils/aiTutor';
 import {
   FunctionalTutorMode,
@@ -72,7 +73,7 @@ export function resolveGeminiAvailability(apiKey: string | undefined, offlineOnl
   if (offlineOnly) return { available: false, reason: 'offline-only' };
   const normalized = apiKey?.trim();
   if (!normalized) return { available: false, reason: 'missing-api-key' };
-  if (/^(MY_GEMINI_API_KEY|your[_-]?gemini[_-]?api[_-]?key|changeme)$/i.test(normalized)) {
+  if (/^(MY_GEMINI_API_KEY|your[_-]?gemini[_-]?api[_-]?key|change[-_ ]?me)$/i.test(normalized)) {
     return { available: false, reason: 'placeholder-api-key' };
   }
   return { available: true, reason: 'api-key-available' };
@@ -107,6 +108,31 @@ export interface TutorOrchestrationResult {
   discrepancyDetected: boolean;
   executionTimeMs: number;
   error?: string;
+}
+
+const MATH_TOPICS = new Set<MathTopic>([
+  'Arithmetic',
+  'Algebra',
+  'Geometry',
+  'Trigonometry',
+  'Calculus',
+  'Statistics',
+  'Probability',
+  'Physics',
+  'Engineering',
+  'Linear Algebra',
+  'Number Theory',
+]);
+
+function normalizeMathTopic(
+  requestedTopic: MathTopic | string | undefined,
+  prompt: string,
+  expression?: string,
+): MathTopic {
+  if (requestedTopic && MATH_TOPICS.has(requestedTopic as MathTopic)) {
+    return requestedTopic as MathTopic;
+  }
+  return detectMathTopic(prompt, expression);
 }
 
 /**
@@ -315,7 +341,7 @@ export async function orchestrateTutor(
   const t0 = performance.now();
   const {
     prompt,
-    topic = 'Algebra',
+    topic: requestedTopic = 'Algebra',
     difficulty = 'intermediate',
     learningObjective = 'concept',
     hintLevel = 1,
@@ -329,6 +355,7 @@ export async function orchestrateTutor(
     conversation = [],
     groundingContext: customGrounding = '',
   } = options;
+  const topic = normalizeMathTopic(requestedTopic, prompt, currentExpression);
 
   // Resolve active functional tutor mode
   const effectiveMode: FunctionalTutorMode =
