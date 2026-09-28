@@ -42,6 +42,7 @@ import {
   isTutorFollowUpPrompt,
   formatTutorContinuityContext,
 } from './tutorConversationService';
+import { parseGeminiJsonResponse, classifyGeminiRuntimeFailure } from './geminiRuntime';
 
 export interface TutorOrchestrationOptions {
   prompt: string;
@@ -62,6 +63,7 @@ export interface TutorOrchestrationOptions {
 }
 
 export type GeminiAvailabilityReason = 'api-key-available' | 'missing-api-key' | 'placeholder-api-key' | 'offline-only';
+export type TutorFallbackStatus = 'none' | 'gemini-unavailable' | 'gemini-request-failed' | 'offline-deterministic-fallback' | 'deterministic-tutor-unavailable';
 
 export interface GeminiAvailability {
   available: boolean;
@@ -108,6 +110,8 @@ export interface TutorOrchestrationResult {
   discrepancyDetected: boolean;
   executionTimeMs: number;
   error?: string;
+  fallbackStatus?: TutorFallbackStatus;
+  responseSource?: 'gemini' | 'deterministic-fallback' | 'deterministic-tutor-unavailable' | 'gemini-unavailable';
 }
 
 const MATH_TOPICS = new Set<MathTopic>([
@@ -537,6 +541,8 @@ export async function orchestrateTutor(
       isOfflineFallback: true,
       discrepancyDetected: false,
       executionTimeMs: Math.round(performance.now() - t0),
+      fallbackStatus: 'gemini-unavailable',
+      responseSource: 'gemini-unavailable',
     };
   }
 
@@ -665,11 +671,11 @@ Return your response in clean JSON matching:
 
   let rawResponseText = '';
   let modelUsed = '';
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   for (const model of candidateModels) {
     try {
-      const resp = await ai.models.generateContent({
+      const resp = await Promise.race([ai.models.generateContent({
         model,
         contents: fullPrompt,
         config: {
@@ -677,14 +683,16 @@ Return your response in clean JSON matching:
           responseMimeType: 'application/json',
           temperature: effectiveMode === 'quiz' ? 0.3 : 0.2,
         },
-      });
+      }), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini request timeout')), 12000))]);
 
-      if (resp && resp.text) {
-        rawResponseText = resp.text.trim();
+      const text = typeof resp?.text === 'string' ? resp.text.trim() : '';
+      if (text) {
+        rawResponseText = text;
         modelUsed = model;
         break;
       }
-    } catch (err: any) {
+      lastError = new Error(`Gemini model ${model} returned an empty response`);
+    } catch (err: unknown) {
       lastError = err;
       continue;
     }
@@ -699,9 +707,11 @@ Return your response in clean JSON matching:
         .replace(/^```\s*/i, '')
         .replace(/```\s*$/i, '')
         .trim();
-      parsed = JSON.parse(cleanJson);
-    } catch {
-      parsed = { answer: rawResponseText, steps: [], formula: null, expression: null };
+      parsed = parseGeminiJsonResponse(cleanJson);
+      if (!parsed) throw new Error('Malformed or unexpected Gemini response structure');
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Malformed Gemini response');
+      parsed = null;
     }
   }
 
@@ -759,7 +769,9 @@ Return your response in clean JSON matching:
         isOfflineFallback: false,
         discrepancyDetected: false,
         executionTimeMs,
-        error: lastError?.message || 'AI generation failed',
+        error: lastError instanceof Error ? lastError.message : 'AI generation failed',
+        fallbackStatus: 'deterministic-tutor-unavailable',
+        responseSource: 'deterministic-tutor-unavailable',
       };
     }
 
@@ -793,7 +805,9 @@ Return your response in clean JSON matching:
       isOfflineFallback: true,
       discrepancyDetected: false,
       executionTimeMs,
-      error: lastError?.message,
+      error: lastError instanceof Error ? lastError.message : undefined,
+      fallbackStatus: 'gemini-request-failed',
+      responseSource: 'deterministic-fallback',
     };
   }
 
