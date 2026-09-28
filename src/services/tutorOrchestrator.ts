@@ -42,7 +42,7 @@ import {
   isTutorFollowUpPrompt,
   formatTutorContinuityContext,
 } from './tutorConversationService';
-import { parseGeminiJsonResponse, classifyGeminiRuntimeFailure } from './geminiRuntime';
+import { parseGeminiJsonResponse, classifyGeminiRuntimeFailure, type GeminiRuntimeFailureKind } from './geminiRuntime';
 
 export interface TutorOrchestrationOptions {
   prompt: string;
@@ -112,6 +112,7 @@ export interface TutorOrchestrationResult {
   error?: string;
   fallbackStatus?: TutorFallbackStatus;
   responseSource?: 'gemini' | 'deterministic-fallback' | 'deterministic-tutor-unavailable' | 'gemini-unavailable';
+  geminiFailureKind?: GeminiRuntimeFailureKind;
 }
 
 const MATH_TOPICS = new Set<MathTopic>([
@@ -541,8 +542,9 @@ export async function orchestrateTutor(
       isOfflineFallback: true,
       discrepancyDetected: false,
       executionTimeMs: Math.round(performance.now() - t0),
-      fallbackStatus: 'gemini-unavailable',
-      responseSource: 'gemini-unavailable',
+      fallbackStatus: options.offlineOnly ? 'offline-deterministic-fallback' : 'gemini-unavailable',
+      responseSource: 'deterministic-fallback',
+
     };
   }
 
@@ -807,6 +809,7 @@ Return your response in clean JSON matching:
       executionTimeMs,
       error: lastError instanceof Error ? lastError.message : undefined,
       fallbackStatus: 'gemini-request-failed',
+      geminiFailureKind: lastError ? classifyGeminiRuntimeFailure(lastError) : 'all-models-failed',
       responseSource: 'deterministic-fallback',
     };
   }
