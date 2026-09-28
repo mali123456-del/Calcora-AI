@@ -27,4 +27,9 @@ assert.equal(isValidGeminiResponse({ answer: 'valid', steps: [] }), true);
 assert.equal(isValidGeminiResponse({ answer: '', steps: [] }), false);
 assert.equal(isValidGeminiResponse({ answer: 'valid', steps: {} }), false);
 
-console.log('Gemini runtime failure tests passed: 18/18');
+import { resolveGeminiAvailability } from '../src/services/tutorOrchestrator';
+
+assert.deepEqual(resolveGeminiAvailability(undefined), { available: false, reason: 'missing-api-key' });
+assert.deepEqual(resolveGeminiAvailability('real-looking-key', true), { available: false, reason: 'offline-only' });
+
+console.log('Gemini runtime failure tests passed: 20/20');
