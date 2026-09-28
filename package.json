@@ -89,13 +89,14 @@
         "nsis",
         "portable"
       ],
-      "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
+      "artifactName": "Calcora-AI-${version}-${arch}.exe"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "Calcora-AI-${version}-${arch}-setup.${ext}"
     },
     "mac": {
       "target": [
@@ -112,6 +113,9 @@
       "category": "Education",
       "maintainer": "Calcora AI <noreply@github.com>",
       "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Calcora-AI-${version}-${arch}-portable.${ext}"
     }
   }
 }
