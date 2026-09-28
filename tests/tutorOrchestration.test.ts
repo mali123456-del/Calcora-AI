@@ -1,4 +1,5 @@
 import { orchestrateTutor } from '../src/ai/tutorOrchestrator';
+import { orchestrateTutor as orchestrateProductionTutor } from '../src/services/tutorOrchestrator';
 import { executeMathTool } from '../src/engine/toolLayer';
 import { extractMathProblem } from '../src/engine/problemExtractor';
 import { buildQuickPrompt, getQuickPromptProfile } from '../src/utils/aiQuickPrompts';
@@ -29,7 +30,16 @@ async function main() {
   const malformed = await executeMathTool('calculate', { expression: '2 + 2; process.exit(1)' });
   if (malformed.success) throw new Error('Unsafe expression was accepted');
 
-  console.log(`Tutor orchestration tests passed: ${cases.length + 3}`);
+  const normalizedTopic = await orchestrateProductionTutor({
+    prompt: '7 * 8',
+    topic: 'not-a-real-topic',
+    offlineOnly: true,
+  });
+  if (normalizedTopic.pedagogy.topic !== 'Arithmetic' || normalizedTopic.deterministicAuthority.authoritativeResult !== '56') {
+    throw new Error(`Invalid topic normalization regression failed: ${JSON.stringify(normalizedTopic.pedagogy)}`);
+  }
+
+  console.log(`Tutor orchestration tests passed: ${cases.length + 4}`);
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });
