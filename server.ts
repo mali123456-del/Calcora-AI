@@ -15,6 +15,8 @@ import { executeMathTool, type MathToolName } from './src/engine/toolLayer';
 import { orchestrateTutor } from './src/ai/tutorOrchestrator';
 import { getAIIntelligenceStatus, runAIIntelligenceCycle, startAIIntelligenceScheduler, getActiveAIIntelligenceContext, searchAIIntelligence } from './src/services/aiIntelligence';
 import { isLearningEvaluationAuthorized, runTutorLearningEvaluation } from './src/services/tutorLearningEngine';
+import { classifyGeminiError, getGeminiCredentialState } from './src/services/geminiStatus';
+import { parseGeminiJsonResponse } from './src/services/geminiRuntime';
 
 dotenv.config();
 
@@ -134,8 +136,9 @@ async function startServer() {
       const deterministicContext = orchestration.deterministic?.success
         ? JSON.stringify(orchestration.deterministic)
         : '';
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
+      const credentialState = getGeminiCredentialState(apiKey && apiKey !== 'MY_GEMINI_API_KEY' ? apiKey : undefined);
+      if (credentialState.state === 'GEMINI_NOT_CONFIGURED') {
         return res.json({
           success: true,
           isOfflineFallback: true,
@@ -260,10 +263,18 @@ Return clean JSON:
         config: { systemInstruction, responseMimeType: 'application/json' },
       });
 
-      const text = response.text || '{}';
-      let parsed;
-      try { parsed = JSON.parse(text); } catch {
-        parsed = { answer: text, steps: [], expression: null };
+      const text = response.text?.trim() || '';
+      const parsed = parseGeminiJsonResponse(text);
+      if (!parsed) {
+        const classification = classifyGeminiError(new Error(text ? 'Malformed JSON payload' : 'Gemini returned an empty response'));
+        return res.status(502).json({
+          success: false,
+          isOfflineFallback: Boolean(orchestration.deterministic?.success),
+          error: classification.userMessage,
+          geminiState: classification.state,
+          deterministicResult: orchestration.deterministic?.success ? orchestration.deterministic.result : null,
+          deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
+        });
       }
 
       res.json({
@@ -283,9 +294,22 @@ Return clean JSON:
           model: 'gemini-3.8-flash',
         },
       });
-    } catch (error: any) {
-      console.error('AI Math endpoint error:', error);
-      res.status(500).json({ success: false, error: error.message || 'Failed to process AI mathematical query' });
+    } catch (error: unknown) {
+      const classification = classifyGeminiError(error);
+      console.error('AI Math endpoint error:', classification.state);
+      const deterministicResult = (() => {
+        try {
+          return orchestration.deterministic?.success ? orchestration.deterministic.result : null;
+        } catch { return null; }
+      })();
+      return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
+        success: false,
+        isOfflineFallback: Boolean(orchestration.deterministic?.success),
+        error: classification.userMessage,
+        geminiState: classification.state,
+        deterministicResult,
+        deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
+      });
     }
   });
 
