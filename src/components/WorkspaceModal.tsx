@@ -394,6 +394,82 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                 </div>
               </div>
 
+              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 space-y-3">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Calcora Data Controls
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Local-only data export/import. API keys, bearer tokens and credentials are never exported.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => downloadFile(exportCalcoraData(loadCalcoraDataSnapshot()), `calcora-data-${Date.now()}.json`, 'application/json')}
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-white dark:bg-slate-900 text-left"
+                  >
+                    <Download className="w-4 h-4 text-indigo-500 mb-1" />
+                    <div className="text-xs font-semibold">Export Calcora Data</div>
+                    <div className="text-[10px] text-slate-400">History, workspaces & learning state</div>
+                  </button>
+                  <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-white dark:bg-slate-900 text-left cursor-pointer">
+                    <Upload className="w-4 h-4 text-amber-500 mb-1" />
+                    <div className="text-xs font-semibold">Import Calcora Data</div>
+                    <div className="text-[10px] text-slate-400">Validated JSON only</div>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          try {
+                            const snapshot = validateAndImportCalcoraData(String(reader.result ?? ''));
+                            saveCalcoraDataSnapshot(snapshot);
+                            onLoadHistory(snapshot.calculationHistory);
+                            setImportError(null);
+                          } catch (err) {
+                            setImportError(err instanceof Error ? err.message : 'Calcora data import failed');
+                          } finally {
+                            e.currentTarget.value = '';
+                          }
+                        };
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      if (!window.confirm('Delete calculation history? This cannot be undone.')) return;
+                      deleteCalcoraData('history');
+                      onLoadHistory([]);
+                    }}
+                    className="p-3 rounded-xl border border-rose-200 dark:border-rose-900/50 hover:border-rose-500 text-left"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-500 mb-1" />
+                    <div className="text-xs font-semibold">Delete History</div>
+                    <div className="text-[10px] text-slate-400">Remove saved calculations</div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!window.confirm('Reset all local Calcora data? Installation files and unrelated Windows data will not be touched.')) return;
+                      deleteCalcoraData('all');
+                      onLoadHistory([]);
+                      window.location.reload();
+                    }}
+                    className="p-3 rounded-xl border border-rose-300 dark:border-rose-800 hover:border-rose-600 text-left"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600 mb-1" />
+                    <div className="text-xs font-semibold">Reset Local Calcora Data</div>
+                    <div className="text-[10px] text-slate-400">Explicit confirmation required</div>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
                   Full Workspace Backup & Restore
