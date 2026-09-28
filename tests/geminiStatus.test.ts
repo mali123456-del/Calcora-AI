@@ -9,6 +9,7 @@ assert.equal(getGeminiCredentialState('   ').state, 'GEMINI_NOT_CONFIGURED');
 assert.equal(getGeminiCredentialState('configured-without-exposing-value').state, 'GEMINI_CONFIGURED');
 
 assert.equal(classifyGeminiError({ status: 401, message: 'API key not valid' }).state, 'GEMINI_INVALID_KEY');
+assert.equal(classifyGeminiError({ status: 401, message: 'authentication failed' }).state, 'GEMINI_UNAUTHORIZED');
 assert.equal(classifyGeminiError({ status: 403, message: 'permission denied' }).state, 'GEMINI_FORBIDDEN');
 assert.equal(classifyGeminiError({ status: 429, message: 'rate limit exceeded' }).state, 'GEMINI_RATE_LIMITED');
 assert.equal(classifyGeminiError({ status: 429, message: 'quota exhausted' }).state, 'GEMINI_QUOTA_EXCEEDED');
