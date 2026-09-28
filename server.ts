@@ -96,6 +96,8 @@ async function startServer() {
 
   // AI Math Assistant & Tutor endpoint
   app.post('/api/ai/math', async (req, res) => {
+    let deterministicResult: string | null = null;
+    let deterministicVerified = false;
     try {
       const {
         prompt,
@@ -133,6 +135,8 @@ async function startServer() {
       const inputUnderstandingInstruction = buildInputUnderstandingInstruction(inputAnalysis);
       const multilingualResponseQualityInstruction = buildMultilingualResponseQualityInstruction(inputAnalysis, safeLanguage);
       const orchestration = await orchestrateTutor(cleanPrompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
+      deterministicResult = orchestration.deterministic?.success ? orchestration.deterministic.result : null;
+      deterministicVerified = Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified);
       const deterministicContext = orchestration.deterministic?.success
         ? JSON.stringify(orchestration.deterministic)
         : '';
@@ -297,18 +301,13 @@ Return clean JSON:
     } catch (error: unknown) {
       const classification = classifyGeminiError(error);
       console.error('AI Math endpoint error:', classification.state);
-      const deterministicResult = (() => {
-        try {
-          return orchestration.deterministic?.success ? orchestration.deterministic.result : null;
-        } catch { return null; }
-      })();
       return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
         success: false,
         isOfflineFallback: Boolean(orchestration.deterministic?.success),
         error: classification.userMessage,
         geminiState: classification.state,
         deterministicResult,
-        deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
+        deterministicVerified,
       });
     }
   });
