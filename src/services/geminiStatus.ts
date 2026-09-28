@@ -80,7 +80,8 @@ export function classifyGeminiError(error: unknown): GeminiErrorClassification {
     return { state: 'GEMINI_FORBIDDEN', userMessage: SAFE_MESSAGES.GEMINI_FORBIDDEN, allowFallback: true, retryable: false };
   }
   if (status === 429 || /resource_exhausted|rate.?limit|too many requests/i.test(lower)) {
-    if (/resource_exhausted|quota|daily|monthly|limit.*exceeded|exhausted/i.test(lower)) {
+    const quotaExceeded = /resource_exhausted|quota(?:\s|_|-|:)?.*(?:exceed|exhaust|deplet)|(?:daily|monthly)\s+quota|quota/i.test(lower);
+    if (quotaExceeded && !/rate.?limit/i.test(lower)) {
       return { state: 'GEMINI_QUOTA_EXCEEDED', userMessage: SAFE_MESSAGES.GEMINI_QUOTA_EXCEEDED, allowFallback: true, retryable: true };
     }
     return { state: 'GEMINI_RATE_LIMITED', userMessage: SAFE_MESSAGES.GEMINI_RATE_LIMITED, allowFallback: true, retryable: true };
