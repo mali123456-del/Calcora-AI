@@ -11,23 +11,28 @@ export function classifyGeminiRuntimeFailure(error: unknown): GeminiRuntimeFailu
   return 'request';
 }
 
+const MAX_GEMINI_RESPONSE_CHARS = 64 * 1024;
+
 export function parseGeminiJsonResponse(raw: string): Record<string, unknown> | null {
+  if (typeof raw !== 'string' || raw.length > MAX_GEMINI_RESPONSE_CHARS) return null;
   const clean = raw.replace(/^\`\`\`json\s*/i, '').replace(/^\`\`\`\s*/i, '').replace(/\`\`\`\s*$/i, '').trim();
   if (!clean) return null;
   try {
     const value: unknown = JSON.parse(clean);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
-    if (typeof record.answer !== 'string' || !record.answer.trim()) return null;
-    if (record.steps !== undefined && !Array.isArray(record.steps)) return null;
+    if (typeof record.answer !== 'string' || !record.answer.trim() || record.answer.length > MAX_GEMINI_RESPONSE_CHARS) return null;
+    if (record.steps !== undefined && (!Array.isArray(record.steps) || record.steps.length > 50 || !record.steps.every((step) => typeof step === 'string' && step.length <= 4000))) return null;
+    if (record.expression !== undefined && record.expression !== null && typeof record.expression !== 'string') return null;
+    if (record.formula !== undefined && record.formula !== null && typeof record.formula !== 'string') return null;
     return record;
   } catch {
     return null;
   }
 }
 
-export function isValidGeminiResponse(value: unknown): value is { answer: string; steps?: unknown[] } {
+export function isValidGeminiResponse(value: unknown): value is { answer: string; steps?: string[] } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.answer === 'string' && record.answer.trim().length > 0 && (record.steps === undefined || Array.isArray(record.steps));
+  return typeof record.answer === 'string' && record.answer.trim().length > 0 && record.answer.length <= MAX_GEMINI_RESPONSE_CHARS && (record.steps === undefined || (Array.isArray(record.steps) && record.steps.length <= 50 && record.steps.every((step) => typeof step === 'string' && step.length <= 4000)));
 }
