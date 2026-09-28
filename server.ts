@@ -303,7 +303,7 @@ Return clean JSON:
       console.error('AI Math endpoint error:', classification.state);
       return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
         success: false,
-        isOfflineFallback: Boolean(orchestration.deterministic?.success),
+        isOfflineFallback: deterministicResult !== null,
         error: classification.userMessage,
         geminiState: classification.state,
         deterministicResult,
