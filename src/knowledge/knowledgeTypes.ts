@@ -96,6 +96,7 @@ export interface IntentClassificationResult {
 
 export interface KnowledgeRetrievalQuery {
   query: string;
+  language?: string;
   topic?: string;
   subtopic?: string;
   intent?: MathematicalIntent;
