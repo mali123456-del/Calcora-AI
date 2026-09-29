@@ -16,7 +16,19 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: |
+          set +e
+          npm install --no-audit --no-fund --verbose 2>&1 | tee install.log
+          code=${PIPESTATUS[0]}
+          exit $code
+      - name: Upload install log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcora-ci-install-log
+          path: install.log
+          if-no-files-found: warn
       - name: Full production verification
         shell: bash
         run: |
