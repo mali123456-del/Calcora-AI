@@ -15,6 +15,8 @@ import { executeMathTool, type MathToolName } from './src/engine/toolLayer';
 import { orchestrateTutor } from './src/ai/tutorOrchestrator';
 import { getAIIntelligenceStatus, runAIIntelligenceCycle, startAIIntelligenceScheduler, getActiveAIIntelligenceContext, searchAIIntelligence } from './src/services/aiIntelligence';
 import { isLearningEvaluationAuthorized, runTutorLearningEvaluation } from './src/services/tutorLearningEngine';
+import { classifyGeminiError } from './src/services/geminiStatus';
+import { parseGeminiJsonResponse } from './src/services/geminiRuntime';
 
 dotenv.config();
 
@@ -254,32 +256,115 @@ Return clean JSON:
         config: { systemInstruction, responseMimeType: 'application/json' },
       });
 
-      const text = response.text || '{}';
-      let parsed;
-      try { parsed = JSON.parse(text); } catch {
-        parsed = { answer: text, steps: [], expression: null };
+      const text = response.text?.trim() || '';
+      const parsed = parseGeminiJsonResponse(text);
+      if (!parsed) {
+        const classification = classifyGeminiError(new Error(text ? 'Malformed JSON payload' : 'Gemini returned an empty response'));
+        if (orchestration.deterministic?.success) {
+          return res.json({
+            success: true,
+            isOfflineFallback: true,
+            answer: orchestration.answer,
+            steps: orchestration.steps,
+            deterministicResult: orchestration.deterministic.result,
+            deterministicExactResult: orchestration.deterministic.exactResult,
+            deterministicSteps: orchestration.deterministic.derivationSteps,
+            deterministicVerified: true,
+            geminiState: classification.state,
+            geminiError: classification.userMessage,
+            meta: {
+              responseProfile,
+              tutorMode,
+              language: safeLanguage,
+              grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
+              deterministicVerified: true,
+              geminiFallback: true,
+              latencyMs: Date.now() - startedAt,
+              model: 'gemini-3.8-flash',
+            },
+          });
+        }
+        return res.status(502).json({
+          success: false,
+          error: classification.userMessage,
+          geminiState: classification.state,
+        });
       }
 
-      res.json({
+      const deterministicResult = orchestration.deterministic;
+      const deterministicVerified = Boolean(deterministicResult?.success && deterministicResult.verificationBadge.isVerified);
+      const authoritativeResult = deterministicResult?.result ?? null;
+      const answerText = typeof parsed.answer === 'string' ? parsed.answer : '';
+      const discrepancyDetected = Boolean(
+        deterministicVerified &&
+        authoritativeResult &&
+        answerText &&
+        !answerText.includes(authoritativeResult)
+      );
+
+      // Deterministic authority is absolute: never return a Gemini answer that omits or
+      // contradicts a verified calculator result. Keep the response useful by using the
+      // deterministic tutor answer whenever Gemini disagrees.
+      const safeParsed = discrepancyDetected
+        ? {
+            ...parsed,
+            answer: orchestration.answer,
+            expression: deterministicResult?.expression ?? parsed.expression ?? null,
+            steps: deterministicResult?.derivationSteps ?? parsed.steps,
+            formula: deterministicResult?.formula ?? parsed.formula ?? null,
+          }
+        : parsed;
+
+      return res.json({
         success: true,
-        ...parsed,
-        deterministicResult: orchestration.deterministic?.success ? orchestration.deterministic.result : null,
-        deterministicExactResult: orchestration.deterministic?.success ? orchestration.deterministic.exactResult : null,
-        deterministicSteps: orchestration.deterministic?.success ? orchestration.deterministic.derivationSteps : [],
-        deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
+        ...safeParsed,
+        deterministicResult: authoritativeResult,
+        deterministicExactResult: deterministicResult?.exactResult ?? null,
+        deterministicSteps: deterministicResult?.derivationSteps ?? [],
+        deterministicVerified,
+        discrepancyDetected,
         meta: {
           responseProfile,
           tutorMode,
           language: safeLanguage,
           grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
-          deterministicVerified: Boolean(safeDeterministicVerification?.isVerified),
+          deterministicVerified: Boolean(safeDeterministicVerification?.isVerified) || deterministicVerified,
           latencyMs: Date.now() - startedAt,
           model: 'gemini-3.8-flash',
         },
       });
-    } catch (error: any) {
-      console.error('AI Math endpoint error:', error);
-      res.status(500).json({ success: false, error: error.message || 'Failed to process AI mathematical query' });
+    } catch (error: unknown) {
+      const classification = classifyGeminiError(error);
+      console.error('AI Math endpoint error:', classification.state);
+      const orchestration = await orchestrateTutor(prompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
+      if (classification.allowFallback && orchestration.deterministic?.success) {
+        return res.json({
+          success: true,
+          isOfflineFallback: true,
+          answer: orchestration.answer,
+          steps: orchestration.steps,
+          deterministicResult: orchestration.deterministic.result,
+          deterministicExactResult: orchestration.deterministic.exactResult,
+          deterministicSteps: orchestration.deterministic.derivationSteps,
+          deterministicVerified: Boolean(orchestration.deterministic.verificationBadge.isVerified),
+          geminiState: classification.state,
+          geminiError: classification.userMessage,
+          meta: {
+            responseProfile,
+            tutorMode,
+            language: safeLanguage,
+            grounded: false,
+            deterministicVerified: Boolean(orchestration.deterministic.verificationBadge.isVerified),
+            geminiFallback: true,
+            model: 'gemini-3.8-flash',
+          },
+        });
+      }
+      return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
+        success: false,
+        error: classification.userMessage,
+        geminiState: classification.state,
+      });
     }
   });
 
