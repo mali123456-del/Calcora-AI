@@ -622,6 +622,8 @@ You explain and tutor around deterministic mathematical results. The calculator 
 
 ${langInstruction}
 
+${multilingualKnowledgeInstruction}
+
 ${tutorModeGuidance}
 
 ${deterministicBoundary}
