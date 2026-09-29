@@ -59,7 +59,6 @@ export interface TutoringRequestOptions {
   audienceProfile?: MathAudienceProfile;
   privacyMode?: PrivacyMode;
   language?: string;
-  responseProfile?: 'quick' | 'deep' | 'balanced';
 }
 
 export async function askAIMathAssistant(prompt: string, conversation: AIMessage[] = [], currentExpression?: string, currentResult?: string, mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain', tutorOptions: TutoringRequestOptions = {}): Promise<AIResponse> {
@@ -68,7 +67,6 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
   const verificationExpression = currentExpression || extractEquationCandidate(prompt);
   const deterministicVerification = verificationExpression ? verifyWithDeterministicEngine(verificationExpression) : undefined;
   const privacy = getOfflinePolicy(tutorOptions.privacyMode);
-  const responseProfile = tutorOptions.responseProfile || 'balanced';
 
   // Hard boundary: private/offline mode NEVER calls the cloud endpoint.
   if (!privacy.allowCloudAI) {
@@ -84,7 +82,7 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
     const res = await fetch('/api/ai/math', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, conversation, currentExpression, currentResult, mode, tutorMode: tutorOptions.tutorMode || 'assistant', learningObjective: tutorOptions.learningObjective || 'concept', difficulty: tutorOptions.difficulty || 'intermediate', topic: tutorOptions.topic || 'Algebra', hintLevel: tutorOptions.hintLevel || 1, socraticMode: tutorOptions.socraticMode || false, userStep: tutorOptions.userStep, groundingContext: tutorOptions.groundingContext, groundedConcepts: tutorOptions.groundedConcepts, audienceProfile, deterministicVerification, language, responseProfile }),
+      body: JSON.stringify({ prompt, conversation, currentExpression, currentResult, mode, tutorMode: tutorOptions.tutorMode || 'assistant', learningObjective: tutorOptions.learningObjective || 'concept', difficulty: tutorOptions.difficulty || 'intermediate', topic: tutorOptions.topic || 'Algebra', hintLevel: tutorOptions.hintLevel || 1, socraticMode: tutorOptions.socraticMode || false, userStep: tutorOptions.userStep, groundingContext: tutorOptions.groundingContext, groundedConcepts: tutorOptions.groundedConcepts, audienceProfile, deterministicVerification, language }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Server responded with HTTP ${res.status}`);
     const data = await res.json();

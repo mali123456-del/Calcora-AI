@@ -13,7 +13,7 @@ assert.deepEqual(parseGeminiJsonResponse('{"answer":"42","steps":["calculate"]}'
   answer: '42',
   steps: ['calculate'],
 });
-assert.deepEqual(parseGeminiJsonResponse(````json\n{"answer":"42"}\n```), { answer: '42' });
+assert.deepEqual(parseGeminiJsonResponse('```json\n{"answer":"42"}\n```'), { answer: '42' });
 assert.equal(parseGeminiJsonResponse(''), null);
 assert.equal(parseGeminiJsonResponse('not json'), null);
 assert.equal(parseGeminiJsonResponse('{"answer":""}'), null);

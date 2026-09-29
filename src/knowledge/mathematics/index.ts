@@ -12,6 +12,14 @@ import {
   type NormalizedMathTrainingRecord,
   type MathIngestionReport,
 } from './ingestion';
+import {
+  knowledgeToSupabaseRecord,
+  tutorExampleToSupabaseRecord,
+  buildQuestionRecord,
+  type SupabaseKnowledgeRecord,
+  type SupabaseTutorExampleRecord,
+  type SupabaseQuestionRecord,
+} from './supabaseSync';
 
 export {
   CORE_MATHEMATICS_KNOWLEDGE,
@@ -25,10 +33,21 @@ export {
   MATH_TUTOR_TRAINING_CORPUS,
   normalizeMathDatasetRecords,
   getMathIngestionPolicy,
+  knowledgeToSupabaseRecord,
+  tutorExampleToSupabaseRecord,
+  buildQuestionRecord,
 };
-export type { MathTutorTrainingExample, MathDatasetSource, RawMathDatasetRecord, NormalizedMathTrainingRecord, MathIngestionReport };
+export type {
+  MathTutorTrainingExample,
+  MathDatasetSource,
+  RawMathDatasetRecord,
+  NormalizedMathTrainingRecord,
+  MathIngestionReport,
+  SupabaseKnowledgeRecord,
+  SupabaseTutorExampleRecord,
+  SupabaseQuestionRecord,
+};
 export type { MathematicsKnowledgeItem };
-export { knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from './supabaseSync';
 
 export const mathematicsKnowledgeIndex = new Map(
   [...CORE_MATHEMATICS_KNOWLEDGE, ...EXTENDED_MATHEMATICS_KNOWLEDGE, ...ADDITIONAL_MATHEMATICS_KNOWLEDGE].map((item) => [item.id, item] as const),

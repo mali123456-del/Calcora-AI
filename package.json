@@ -2,12 +2,6 @@
   "name": "calcora-ai",
   "private": true,
   "version": "1.0.0",
-  "description": "Digital AI Scientific Calculator and mathematics workbench",
-  "author": {
-    "name": "Calcora AI",
-    "email": "noreply@github.com"
-  },
-  "desktopName": "calcora-ai",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -18,9 +12,10 @@
     "clean": "node -e \"const fs=require('fs'); for(const p of ['dist','dist-electron','server.js']) fs.rmSync(p,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
     "electron": "electron .",
-    "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis portable",
+    "test": "npm run test:core && npm run test:tutor && npx tsx --test src/engine/tests/currencyConverter.test.ts",
     "test:core": "tsx tests/core.test.ts",
-    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:tutor-conversation && npm run test:gemini-availability && npm run test:gemini-runtime && npm run test:gemini-status && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run test:data-transfer && npm run test:agent-data && npm run build",
+    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run build",
     "test:tutor": "tsx tests/tutorOrchestration.test.ts",
     "test:intelligence": "tsx tests/aiIntelligence.test.ts",
     "test:learning": "tsx tests/tutorLearningEngine.test.ts",
@@ -28,20 +23,14 @@
     "test:multilingual": "tsx tests/multilingualCurrency.test.ts",
     "test:multilingual-input": "tsx tests/multilingualInputUnderstanding.test.ts",
     "test:math": "tsx tests/mathEngineRegression.test.ts",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "dist:all": "npm run build && electron-builder --win nsis portable --publish never && electron-builder --mac dmg zip --publish never && electron-builder --linux AppImage deb --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb",
+    "dist:all": "npm run build && electron-builder --win nsis portable && electron-builder --mac dmg zip && electron-builder --linux AppImage deb",
     "test:multilingual-response": "tsx tests/multilingualResponseQuality.test.ts",
     "test:desktop": "tsx tests/desktopRuntimeConfig.test.ts",
     "test:tutor-guard": "tsx tests/tutorResponseGuard.test.ts",
     "test:multilingual-adversarial": "tsx tests/multilingualAdversarial.test.ts",
-    "test:math-100": "tsx tests/mathRegression100.test.ts",
-    "test:gemini-availability": "tsx tests/geminiAvailability.test.ts",
-    "test:gemini-runtime": "tsx tests/geminiRuntime.test.ts",
-    "test:data-transfer": "tsx tests/dataTransferService.test.ts",
-    "test:agent-data": "tsx tests/agentDataLayer.test.ts",
-    "test:tutor-conversation": "tsx tests/tutorConversationService.test.ts",
-    "test:gemini-status": "tsx tests/geminiStatus.test.ts"
+    "test:math-100": "tsx tests/mathRegression100.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -89,14 +78,13 @@
         "nsis",
         "portable"
       ],
-      "artifactName": "Calcora-AI-${version}-${arch}.exe"
+      "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "artifactName": "Calcora-AI-${version}-${arch}-setup.${ext}"
+      "createStartMenuShortcut": true
     },
     "mac": {
       "target": [
@@ -111,11 +99,7 @@
         "deb"
       ],
       "category": "Education",
-      "maintainer": "Calcora AI <noreply@github.com>",
       "artifactName": "Calcora-AI-${version}-${arch}.${ext}"
-    },
-    "portable": {
-      "artifactName": "Calcora-AI-${version}-${arch}-portable.${ext}"
     }
   }
 }

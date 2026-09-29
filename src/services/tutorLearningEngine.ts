@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { timingSafeEqual } from 'node:crypto';
 
-export interface TutorEvaluationCase { prompt: string; expectedBehavior: string; deterministicAuthority: boolean; sourceItemId?: string | null; }
+export interface TutorEvaluationCase {
+  prompt: string;
+  expectedBehavior: string;
+  deterministicAuthority: boolean;
+  sourceItemId?: string | null;
+}
 
 export function isLearningEvaluationAuthorized(providedToken: string | undefined, expectedToken: string | undefined): boolean {
   if (!providedToken || !expectedToken) return false;

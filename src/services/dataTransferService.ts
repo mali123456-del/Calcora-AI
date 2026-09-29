@@ -56,11 +56,12 @@ export function containsSecret(value: unknown): boolean {
 }
 
 export function stripSecretsRecursively<T>(value: T): T {
-  if (Array.isArray(value)) return value.filter((item) => !containsSecret(item)).map((item) => stripSecretsRecursively(item)) as T;
+  if (Array.isArray(value)) return value.filter((item) => !(typeof item === 'string' && containsSecret(item))).map((item) => stripSecretsRecursively(item)) as T;
   if (value && typeof value === 'object') {
     const output: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (SECRET_KEY.test(key) || containsSecret(child)) continue;
+      if (SECRET_KEY.test(key)) continue;
+      if (typeof child === 'string' && containsSecret(child)) continue;
       output[key] = stripSecretsRecursively(child);
     }
     return output as T;
@@ -141,7 +142,7 @@ export function validateAndImportCalcoraData(json: string): CalcoraDataSnapshot 
     agentData: validateAgentData(value.agentData),
   });
   if (containsSecret(snapshot)) throw new Error('Import contains unsupported secret material');
-  return snapshot;
+  return snapshot as CalcoraDataSnapshot;
 }
 
 export function exportCalcoraData(snapshot: CalcoraDataSnapshot): string {

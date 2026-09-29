@@ -20,9 +20,7 @@ const numberWord: Record<string,string> = {
 
 function normalize(text: string): string {
   let s = text.toLowerCase().replace(/×|✕/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
-  for (const [word, value] of Object.entries(numberWord)) {
-    s = s.replace(new RegExp('\\b' + word + '\\b','g'), value);
-  }
+  for (const [word, value] of Object.entries(numberWord)) s = s.replace(new RegExp('\\b'+word+'\\b','g'), value);
   s = s.replace(/\b(times|multiplied by)\b/g,'*')
     .replace(/\b(divided by|over)\b/g,'/')
     .replace(/\b(plus|added to)\b/g,'+')
@@ -30,10 +28,6 @@ function normalize(text: string): string {
     .replace(/\b(power of)\b/g,'^')
     .replace(/\b(square root of)\b/g,'sqrt ');
   return s;
-}
-
-function normalizeArithmeticCandidate(candidate: string): string {
-  return candidate.trim().replace(/=\s*$/,'').trim();
 }
 
 export function extractMathProblem(input: string): ExtractedMathProblem {
@@ -48,9 +42,7 @@ export function extractMathProblem(input: string): ExtractedMathProblem {
   if (equation && /=/.test(equation[1])) return { kind:'solveEquation', equation:equation[1].trim() };
 
   const arithmetic = s.match(/(?:what is|calculate|compute|evaluate|equals?)\s+(.+?)(?:\?|$)/i);
-  const candidate = arithmetic?.[1]?.trim()
-    ? normalizeArithmeticCandidate(arithmetic[1])
-    : (/[+*/^%]/.test(s) && /\d/.test(s) ? normalizeArithmeticCandidate(s) : '');
+  const candidate = arithmetic?.[1]?.trim() ?? (/[+*/^%]/.test(s) && /\d/.test(s) ? s.replace(/\?$/,'').trim() : '');
   if (candidate && /^[0-9+*/%().^\s-]+$/.test(candidate)) {
     try {
       const checked = calculateExpression(candidate, 'DEG');
@@ -59,3 +51,5 @@ export function extractMathProblem(input: string): ExtractedMathProblem {
   }
   return { kind:'unknown' };
 }
+
+export const extractMathematicalProblem = extractMathProblem;

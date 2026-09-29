@@ -15,8 +15,6 @@ import { executeMathTool, type MathToolName } from './src/engine/toolLayer';
 import { orchestrateTutor } from './src/ai/tutorOrchestrator';
 import { getAIIntelligenceStatus, runAIIntelligenceCycle, startAIIntelligenceScheduler, getActiveAIIntelligenceContext, searchAIIntelligence } from './src/services/aiIntelligence';
 import { isLearningEvaluationAuthorized, runTutorLearningEvaluation } from './src/services/tutorLearningEngine';
-import { classifyGeminiError, getGeminiCredentialState } from './src/services/geminiStatus';
-import { parseGeminiJsonResponse } from './src/services/geminiRuntime';
 
 dotenv.config();
 
@@ -96,8 +94,6 @@ async function startServer() {
 
   // AI Math Assistant & Tutor endpoint
   app.post('/api/ai/math', async (req, res) => {
-    let deterministicResult: string | null = null;
-    let deterministicVerified = false;
     try {
       const {
         prompt,
@@ -123,32 +119,22 @@ async function startServer() {
         return res.status(400).json({ error: 'Prompt is required' });
       }
 
-      // Backward-compatible defense: older Quick Prompt clients embedded internal response-profile metadata.
-      // Never let that control marker enter conversation history, deterministic parsing, or user-visible output.
-      const embeddedProfile = prompt.match(/^\[CALCORA_RESPONSE_PROFILE:(quick|deep|balanced)\]\s*/i)?.[1] as 'quick' | 'deep' | 'balanced' | undefined;
-      const cleanPrompt = prompt.replace(/^\[CALCORA_RESPONSE_PROFILE:(?:quick|deep|balanced)\]\s*/i, '').trim();
-      const effectiveResponseProfile = embeddedProfile || responseProfile;
-
-      const inputAnalysis = analyzeTutorInput(cleanPrompt, language);
-      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(cleanPrompt);
+      const inputAnalysis = analyzeTutorInput(prompt, language);
+      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(prompt);
       const languageCapability = getTutorLanguageCapability(safeLanguage);
       const inputUnderstandingInstruction = buildInputUnderstandingInstruction(inputAnalysis);
       const multilingualResponseQualityInstruction = buildMultilingualResponseQualityInstruction(inputAnalysis, safeLanguage);
-      const orchestration = await orchestrateTutor(cleanPrompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
-      deterministicResult = orchestration.deterministic?.success ? orchestration.deterministic.result : null;
-      deterministicVerified = Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified);
+      const orchestration = await orchestrateTutor(prompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
       const deterministicContext = orchestration.deterministic?.success
         ? JSON.stringify(orchestration.deterministic)
         : '';
-      const apiKey = process.env.GEMINI_API_KEY?.trim();
-      const credentialState = getGeminiCredentialState(apiKey && apiKey !== 'MY_GEMINI_API_KEY' ? apiKey : undefined);
-      if (credentialState.state === 'GEMINI_NOT_CONFIGURED') {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
         return res.json({
           success: true,
           isOfflineFallback: true,
           answer: orchestration.answer || `AI Math Assistant & Tutor is ready. To enable live Gemini responses, ensure your GEMINI_API_KEY is configured in Settings > Secrets.\n\nQuery received: "${prompt}".\n\nTip: You can use the deterministic calculator, equation solver, unit converter, and tutoring tools directly!`,
           steps: orchestration.steps || ['Input parsed safely.', 'No deterministic tool was applicable.'],
-          geminiState: credentialState.state,
           meta: { language: safeLanguage, grounded: false, deterministicVerified: orchestration.authoritative, tutorMode, mode: orchestration.mode },
         });
       }
@@ -158,9 +144,9 @@ async function startServer() {
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
       });
 
-      const responseProfileGuidance = effectiveResponseProfile === 'quick'
+      const responseProfileGuidance = responseProfile === 'quick'
         ? `QUICK RESPONSE PROFILE ACTIVE: Put the verified result or direct definition first. Keep the initial answer compact (prefer 3-6 short lines), then offer expandable detail. Do not sacrifice mathematical correctness or domain restrictions.`
-        : effectiveResponseProfile === 'deep'
+        : responseProfile === 'deep'
         ? `DEEP RESPONSE PROFILE ACTIVE: Give a rigorous derivation, assumptions, domain checks, alternative method when useful, and a compact verification section.`
         : `BALANCED RESPONSE PROFILE ACTIVE: Give the direct result first, then the minimum useful derivation and verification.`;
 
@@ -176,7 +162,7 @@ async function startServer() {
         ? `SOLVER REVIEW MODE ACTIVE: Audit the mathematical solution, edge cases, domain restrictions, assumptions, and applied rules.`
         : `STANDARD ASSISTANT MODE ACTIVE: Provide direct, concise answers with step-by-step proofs and LaTeX formulas.`;
 
-      const knowledgeQuery = cleanPrompt.slice(0, 500);
+      const knowledgeQuery = prompt.slice(0, 500);
       const knowledgeResult = await executeMathTool('retrieveKnowledge', { query: knowledgeQuery, limit: 6 });
       const retrievedKnowledge = knowledgeResult.success ? knowledgeResult.metadata?.matches : [];
       const safeGroundingContext = typeof groundingContext === 'string' ? groundingContext.slice(0, 12000) : '';
@@ -259,7 +245,7 @@ Return clean JSON:
       const historyContext = Array.isArray(conversation)
         ? conversation.slice(-6).map((m: { role: string; content: string }) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
         : '';
-      const fullPrompt = historyContext ? `${historyContext}\nUser: ${cleanPrompt}` : cleanPrompt;
+      const fullPrompt = historyContext ? `${historyContext}\nUser: ${prompt}` : prompt;
       const startedAt = Date.now();
 
       const response = await ai.models.generateContent({
@@ -268,18 +254,10 @@ Return clean JSON:
         config: { systemInstruction, responseMimeType: 'application/json' },
       });
 
-      const text = response.text?.trim() || '';
-      const parsed = parseGeminiJsonResponse(text);
-      if (!parsed) {
-        const classification = classifyGeminiError(new Error(text ? 'Malformed JSON payload' : 'Gemini returned an empty response'));
-        return res.status(502).json({
-          success: false,
-          isOfflineFallback: Boolean(orchestration.deterministic?.success),
-          error: classification.userMessage,
-          geminiState: classification.state,
-          deterministicResult: orchestration.deterministic?.success ? orchestration.deterministic.result : null,
-          deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
-        });
+      const text = response.text || '{}';
+      let parsed;
+      try { parsed = JSON.parse(text); } catch {
+        parsed = { answer: text, steps: [], expression: null };
       }
 
       res.json({
@@ -289,9 +267,8 @@ Return clean JSON:
         deterministicExactResult: orchestration.deterministic?.success ? orchestration.deterministic.exactResult : null,
         deterministicSteps: orchestration.deterministic?.success ? orchestration.deterministic.derivationSteps : [],
         deterministicVerified: Boolean(orchestration.deterministic?.success && orchestration.deterministic.verificationBadge.isVerified),
-        geminiState: 'GEMINI_CONFIGURED',
         meta: {
-          responseProfile: effectiveResponseProfile,
+          responseProfile,
           tutorMode,
           language: safeLanguage,
           grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
@@ -300,17 +277,9 @@ Return clean JSON:
           model: 'gemini-3.8-flash',
         },
       });
-    } catch (error: unknown) {
-      const classification = classifyGeminiError(error);
-      console.error('AI Math endpoint error:', classification.state);
-      return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
-        success: false,
-        isOfflineFallback: deterministicResult !== null,
-        error: classification.userMessage,
-        geminiState: classification.state,
-        deterministicResult,
-        deterministicVerified,
-      });
+    } catch (error: any) {
+      console.error('AI Math endpoint error:', error);
+      res.status(500).json({ success: false, error: error.message || 'Failed to process AI mathematical query' });
     }
   });
 

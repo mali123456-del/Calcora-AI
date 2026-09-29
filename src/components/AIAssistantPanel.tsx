@@ -82,7 +82,6 @@ import {
 } from '../utils/aiExport';
 import {
   buildQuickPrompt,
-  getQuickPromptProfile,
   QuickPromptType,
   QUICK_PROMPT_ITEMS,
 } from '../utils/aiQuickPrompts';
@@ -382,7 +381,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, []);
 
   // Send message handler with input sanitization and Tutor parameters
-  const handleSend = async (textToSend?: string, requestOverrides: { responseProfile?: 'quick' | 'deep' | 'balanced' } = {}) => {
+  const handleSend = async (textToSend?: string) => {
     const rawText = textToSend !== undefined ? textToSend : inputPrompt;
     const sanitized = sanitizeQueryText(rawText);
 
@@ -539,7 +538,6 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           groundedConcepts: retrievedKnowledge.map((result) => result.item.concept),
           audienceProfile,
           language: tutorLanguage,
-          responseProfile: requestOverrides.responseProfile,
         }
       );
 
@@ -877,7 +875,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (type === 'explain-step' && targetStep) {
       // Direct per-step explanation
       const promptText = buildQuickPrompt(type, { targetStep });
-      handleSend(promptText, { responseProfile: getQuickPromptProfile(type) });
+      handleSend(promptText);
       return;
     }
 
@@ -895,7 +893,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       targetStep,
       lastAssistantMessage,
     });
-    handleSend(promptText, { responseProfile: getQuickPromptProfile(type) });
+    handleSend(promptText);
   };
 
   // ---------------------------------------------------------------------------

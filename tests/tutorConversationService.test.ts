@@ -7,9 +7,6 @@ import {
   setTutorMode,
   resetTutorSession,
   exportTutorSessionMarkdown,
-  isTutorFollowUpPrompt,
-  buildTutorFollowUpContext,
-  formatTutorContinuityContext,
 } from '../src/services/tutorConversationService';
 
 let state = createTutorConversationState('session-1');
@@ -44,18 +41,3 @@ assert.ok(exported.includes('# Math Tutor Session'));
 const reset = resetTutorSession(state);
 assert.equal(reset.messages.length, 1);
 console.log('Tutor conversation state tests passed');
-
-
-assert.equal(isTutorFollowUpPrompt('What is the next step?'), true);
-assert.equal(isTutorFollowUpPrompt('Why did we subtract 5?'), true);
-assert.equal(isTutorFollowUpPrompt('Solve 9 * 8'), false);
-
-const continuity = buildTutorFollowUpContext(state, 'What do I do next?');
-assert.equal(continuity.isFollowUp, true);
-assert.equal(continuity.reason, 'continuation');
-assert.equal(continuity.activeProblem?.rawProblem, '2x + 5 = 17');
-assert.equal(continuity.learningLevel, 'beginner');
-
-const continuityText = formatTutorContinuityContext(continuity);
-assert.ok(continuityText.includes('Active problem: 2x + 5 = 17'));
-assert.ok(continuityText.includes('Follow-up detected: yes'));

@@ -8,6 +8,7 @@ import { computeStatistics } from './statisticsEngine';
 import { determinantMatrix, multiplyMatrices } from './matrixEngine';
 import { convertUnits } from './unitConverter';
 import type { MathToolResult, MathVerificationBadge } from '../types';
+export type { MathToolResult, MathVerificationBadge };
 
 const MAX_EXPRESSION = 500;
 const MAX_MATRIX_DIM = 12;
@@ -100,7 +101,7 @@ export function toolCalculate(args: Record<string, unknown>): MathToolResult {
     const r = calculateExpression(expression, angleMode);
     if (r.error) return fail('calculate', expression, r.error);
     const value = String(r.value);
-    const steps = [`${expression} = ${value}`];
+    const steps = [`${expression} = ${r.display || value}`];
     return result('calculate', expression, value, steps, {
       exactResult: r.exactFraction ?? value,
       approximateResult: value,
@@ -173,7 +174,7 @@ export function toolStatistics(args: Record<string, unknown>): MathToolResult {
     const r = computeStatistics(data as number[]);
     return result('statistics', `[${data.join(', ')}]`, JSON.stringify({ mean:r.mean, median:r.median, mode:r.mode, varianceSample:r.varianceSample, variancePopulation:r.variancePopulation, stdDevSample:r.stdDevSample, stdDevPopulation:r.stdDevPopulation, iqr:r.iqr }), [
       `Count = ${r.count}`, `Mean = ${r.mean}`, `Median = ${r.median}`, `IQR = ${r.iqr}`
-    ], { executionTimeMs: 0, metadata: { ...r } });
+    ], { executionTimeMs: 0, metadata: r as unknown as Record<string, unknown> });
   } catch (e) { return fail('statistics', 'dataset', e instanceof Error ? e.message : 'Statistics failed'); }
 }
 

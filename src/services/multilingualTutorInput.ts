@@ -12,7 +12,6 @@ export interface MultilingualInputAnalysis {
 }
 
 const SCRIPT_PATTERNS: Array<[string, RegExp]> = [
-  ['Latin', /[A-Za-z]/],
   ['Arabic', /[\u0600-\u06ff]/], ['Devanagari', /[\u0900-\u097f]/], ['Bengali', /[\u0980-\u09ff]/],
   ['Gurmukhi', /[\u0a00-\u0a7f]/], ['Gujarati', /[\u0a80-\u0aff]/], ['Tamil', /[\u0b80-\u0bff]/],
   ['Telugu', /[\u0c00-\u0c7f]/], ['Kannada', /[\u0c80-\u0cff]/], ['Malayalam', /[\u0d00-\u0d7f]/],
@@ -20,11 +19,12 @@ const SCRIPT_PATTERNS: Array<[string, RegExp]> = [
   ['Myanmar', /[\u1000-\u109f]/], ['Georgian', /[\u10a0-\u10ff]/], ['Armenian', /[\u0530-\u058f]/],
   ['Hebrew', /[\u0590-\u05ff]/], ['Cyrillic', /[\u0400-\u04ff]/], ['Greek', /[\u0370-\u03ff]/],
   ['CJK', /[\u3400-\u9fff]/], ['Hiragana/Katakana', /[\u3040-\u30ff]/], ['Hangul', /[\uac00-\ud7af]/],
+  ['Latin', /[A-Za-z\u00C0-\u024F]/], ['Mathematical', /[0-9=+\-*/^()]/],
 ];
 
 const ROMAN_URDU = /\b(acha|achha|hai|hain|ho|hoga|karo|karna|mujhe|mujhy|tum|aap|ap|usko|isko|men|mein|kay|ke|ki|ko|se|par|yeh|yah|bhi|aur|agla|command|samjho|samjhao|batao|ker|karo|nahi|nahin)\b/i;
 const ROMAN_HINDI = /\b(kya|mujhe|mujhko|tumhe|aapko|hai|hain|kaise|samjhao|batao|chahiye|karna|hoga|nahi)\b/i;
-const COMMON_ENGLISH = /\b(the|and|is|are|what|how|why|please|explain|calculate|solve|show|give|make|add|feature|language|grammar|in|simple|words|equation|this|that|for|to|of|with|me|my|can|you)\b/i;
+const COMMON_ENGLISH = /\b(the|and|is|are|in|on|at|to|for|with|of|by|from|as|what|how|why|please|explain|calculate|solve|show|give|make|add|feature|language|grammar|simple|words|word|equation|quadratic|math|problem|help|step|steps)\b/i;
 
 export function analyzeTutorInput(text: string, requestedLanguage?: string): MultilingualInputAnalysis {
   const input = text.trim().replace(/\s+/g, ' ');
@@ -32,8 +32,11 @@ export function analyzeTutorInput(text: string, requestedLanguage?: string): Mul
   const detected = new Set<string>();
   if (/[پچژگھے]/.test(input)) detected.add('ur');
   if (/[ऀ-ॿ]/.test(input)) detected.add('hi');
-  if (/[぀-ヿ]/.test(input)) detected.add('ja');
-  if (/[一-鿿]/.test(input)) detected.add('zh');
+  if (/[぀-ヿ]/.test(input)) {
+    detected.add('ja');
+  } else if (/[一-鿿]/.test(input)) {
+    detected.add('zh');
+  }
   if (/[가-힯]/.test(input)) detected.add('ko');
   if (/[؀-ۿ]/.test(input) && !detected.has('ur')) detected.add('ar');
   if (/[Ѐ-ӿ]/.test(input)) detected.add('ru');
