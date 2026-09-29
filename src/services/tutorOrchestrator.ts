@@ -23,6 +23,7 @@ import {
 } from '../engine/toolLayer';
 import type { MathToolResult } from '../types';
 import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
+import { buildMultilingualTutorKnowledge } from './multilingualTutorKnowledge';
 import {
   getLanguageTemplate,
   getLanguageSystemInstruction,
@@ -457,9 +458,11 @@ export async function orchestrateTutor(
   // --------------------------------------------------------------------------
   let groundingContext = customGrounding;
   const groundingSources: string[] = [];
+  let retrievedKnowledge: ReturnType<typeof retrieveMathematicsKnowledge> | null = null;
 
   try {
-    const knowledge = retrieveMathematicsKnowledge({ query: prompt, topic });
+    const knowledge = retrieveMathematicsKnowledge({ query: prompt, topic, language });
+    retrievedKnowledge = knowledge;
     if (knowledge.primaryConcept) {
       groundingSources.push(knowledge.primaryConcept.concept);
       if (!groundingContext) {
@@ -475,6 +478,7 @@ export async function orchestrateTutor(
 
   const langTemplate = getLanguageTemplate(language);
   const langInstruction = getLanguageSystemInstruction(language);
+  const multilingualKnowledgeInstruction = buildMultilingualTutorKnowledge(language);
 
   // --------------------------------------------------------------------------
   // Step 3: Offline / Deterministic Fallback Mode (No API Key or Offline)
@@ -501,13 +505,24 @@ export async function orchestrateTutor(
         steps: deterministicResult.steps || deterministicResult.derivationSteps || [],
         formula: deterministicResult.formula || null,
       };
+    } else if (retrievedKnowledge?.primaryConcept) {
+      const concept = retrievedKnowledge.primaryConcept;
+      const verifiedExample = concept.examples[0];
+      offlineAnswerData = {
+        answer: [
+          concept.concept,
+          '',
+          concept.definition,
+          concept.formulas.length ? `Relevant formula(s): ${concept.formulas.join('; ')}` : '',
+          verifiedExample ? `Verified example: ${verifiedExample.problem} → ${verifiedExample.solution}` : '',
+        ].filter(Boolean).join('\n\n'),
+        steps: concept.solutionStrategies.slice(0, 5),
+        formula: concept.formulas[0] || null,
+      };
     } else {
       offlineAnswerData = {
-        answer: `Deterministic Math Tutor is active.\n\nQuery: "${prompt}"\n\nAll calculations and derivations remain 100% verified by the deterministic engine.`,
-        steps: [
-          'Input analyzed deterministically.',
-          'Authoritative math engine verified consistency.',
-        ],
+        answer: `Local deterministic Tutor knowledge could not resolve this request.\n\nQuery: "${prompt}"\n\nNo verified local knowledge or deterministic calculation was available.`,
+        steps: ['Input analyzed.', 'No verified local knowledge matched the request.'],
         formula: null,
       };
     }
@@ -666,8 +681,8 @@ Return your response in clean JSON matching:
   const fullPrompt = `${continuityContext}\nUser: ${prompt}`;
 
   const candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     'gemini-flash-latest',
   ];
 
