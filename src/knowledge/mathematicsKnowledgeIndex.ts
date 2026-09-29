@@ -1,4 +1,5 @@
 import { MathKnowledgeItem, MATHEMATICS_KNOWLEDGE_VERSION } from './knowledgeTypes';
+import { rankMultilingualConceptMatch, resolveMultilingualConceptIds } from './multilingualMathConcepts';
 import { arithmeticKnowledge } from './mathematics/arithmetic';
 import { algebraKnowledge } from './mathematics/algebra';
 import { geometryKnowledge } from './mathematics/geometry';
@@ -43,15 +44,19 @@ for (const item of ALL_MATHEMATICS_KNOWLEDGE) {
  */
 export function searchKnowledgeBase(query: string, limit = 5): MathKnowledgeItem[] {
   if (!query || !query.trim()) return [];
-  const normalized = query.toLowerCase().trim();
+  const normalized = query.toLocaleLowerCase().trim();
   const tokens = normalized.split(/\s+/).filter((t) => t.length > 1);
+  const multilingualConceptIds = resolveMultilingualConceptIds(normalized);
 
   const scored = ALL_MATHEMATICS_KNOWLEDGE.map((item) => {
-    let score = 0;
+    let score = rankMultilingualConceptMatch(item, normalized);
     const conceptLower = item.concept.toLowerCase();
     const defLower = item.definition.toLowerCase();
     const topicLower = item.topic.toLowerCase();
     const subtopicLower = item.subtopic.toLowerCase();
+
+    // Canonical multilingual concept matches receive the strongest signal.
+    if (multilingualConceptIds.includes(item.id)) score += 100;
 
     // Exact matches
     if (conceptLower.includes(normalized)) score += 100;
