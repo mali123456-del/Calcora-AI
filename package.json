@@ -15,7 +15,7 @@
     "dist:win": "npm run build && electron-builder --win nsis portable",
     "test": "npm run test:core && npm run test:tutor && npx tsx --test src/engine/tests/currencyConverter.test.ts",
     "test:core": "tsx tests/core.test.ts",
-    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run build",
+    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:knowledge-grounding && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:tutor-guard && npm run build",
     "test:tutor": "tsx tests/tutorOrchestration.test.ts",
     "test:intelligence": "tsx tests/aiIntelligence.test.ts",
     "test:learning": "tsx tests/tutorLearningEngine.test.ts",
@@ -30,7 +30,8 @@
     "test:desktop": "tsx tests/desktopRuntimeConfig.test.ts",
     "test:tutor-guard": "tsx tests/tutorResponseGuard.test.ts",
     "test:multilingual-adversarial": "tsx tests/multilingualAdversarial.test.ts",
-    "test:math-100": "tsx tests/mathRegression100.test.ts"
+    "test:math-100": "tsx tests/mathRegression100.test.ts",
+    "test:knowledge-grounding": "tsx tests/knowledgeGroundingRuntime.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
