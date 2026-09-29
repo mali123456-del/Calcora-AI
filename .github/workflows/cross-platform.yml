@@ -30,35 +30,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package.json
       - name: Install dependencies
-        run: npm install
-      - name: Typecheck
-        run: npm run lint
-      - name: Core tests
-        run: npm run test:core
-      - name: Tutor tests
-        run: npm run test:tutor
-      - name: Intelligence tests
-        run: npm run test:intelligence
-      - name: Learning tests
-        run: npm run test:learning
-      - name: Multilingual tests
-        run: npm run test:multilingual
-      - name: Multilingual input tests
-        run: npm run test:multilingual-input
-      - name: Multilingual adversarial tests
-        run: npm run test:multilingual-adversarial
-      - name: Math regression tests
-        run: npm run test:math
-      - name: 100-plus math benchmark
-        run: npm run test:math-100
-      - name: Desktop runtime tests
-        run: npm run test:desktop
-      - name: Tutor response guard tests
-        run: npm run test:tutor-guard
-      - name: Production build
-        run: npm run build
+        run: npm install --no-audit --no-fund
+      - name: Full production verification
+        run: npm run verify
       - name: Desktop packaging
         run: npm run ${{ matrix.package }}
