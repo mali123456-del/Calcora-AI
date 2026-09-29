@@ -18,7 +18,19 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Full production verification
-        run: npm run verify
+        shell: bash
+        run: |
+          set +e
+          npm run verify 2>&1 | tee verify.log
+          code=${PIPESTATUS[0]}
+          exit $code
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcora-ci-verification-log
+          path: verify.log
+          if-no-files-found: warn
 
   windows-package:
     runs-on: windows-latest
