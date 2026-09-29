@@ -54,9 +54,14 @@ export function retrieveMathematicsKnowledge(
   let groundingContextText = '';
   if (primaryConcept) {
     groundingContextText = `[MATHEMATICAL KNOWLEDGE GROUNDING]\n` +
+      `Language: ${query.language || 'auto'}\n` +
       `Primary Concept: ${primaryConcept.concept} (${primaryConcept.topic} / ${primaryConcept.subtopic})\n` +
       `Definition: ${primaryConcept.definition}\n` +
+      `Notation: ${primaryConcept.notation}\n` +
       `Formulas: ${primaryConcept.formulas.join('; ')}\n` +
+      (primaryConcept.theorems?.length ? `Theorems: ${primaryConcept.theorems.join('; ')}\n` : '') +
+      (primaryConcept.identities?.length ? `Identities: ${primaryConcept.identities.join('; ')}\n` : '') +
+      (primaryConcept.examples.length ? `Verified Examples: ${primaryConcept.examples.map(example => `${example.problem} -> ${example.solution}`).join(' | ')}\n` : '') +
       `Domain Restrictions & Conditions: ${primaryConcept.domainRestrictions.join('; ')}\n` +
       (primaryConcept.assumptions.length > 0 ? `Assumptions: ${primaryConcept.assumptions.join('; ')}\n` : '') +
       (primaryConcept.commonMistakes.length > 0
