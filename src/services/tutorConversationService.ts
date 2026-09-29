@@ -162,6 +162,88 @@ export function resetTutorSession(state: TutorConversationState): TutorConversat
   return persist(createTutorConversationState(state.id, state.title));
 }
 
+export interface TutorFollowUpContext {
+  isFollowUp: boolean;
+  reason: 'explicit' | 'referential' | 'continuation' | 'new-problem';
+  activeProblem: TutorProblemContext | null;
+  learningLevel: TutorLearningLevel;
+  topicMastery: Partial<Record<MathTopic, number>>;
+  recentTurns: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+const FOLLOW_UP_PATTERNS = [
+  /\b(what next|next step|continue|go on|keep going|explain more|more detail|why|how did you|how do i|what does (this|that) mean|i don't understand|check (my|this) answer|is (my|this) answer|another step)\b/i,
+  /\b(this|that|it|the answer|the step|the equation|the problem)\b/i,
+];
+
+export function isTutorFollowUpPrompt(prompt: string): boolean {
+  const text = prompt.trim();
+  if (!text) return false;
+  return FOLLOW_UP_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function buildTutorFollowUpContext(
+  state: TutorConversationState,
+  prompt: string,
+  maxTurns = 6,
+): TutorFollowUpContext {
+  const activeProblem = state.problemContext;
+  const isFollowUp = Boolean(activeProblem) && isTutorFollowUpPrompt(prompt);
+  const recentTurns = state.messages
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .slice(-Math.max(2, Math.min(maxTurns, 12)))
+    .map((message) => ({ role: message.role as 'user' | 'assistant', content: message.content }));
+
+  let reason: TutorFollowUpContext['reason'] = 'new-problem';
+  if (isFollowUp) {
+    if (/\b(what next|next step|continue|go on|keep going)\b/i.test(prompt)) reason = 'continuation';
+    else if (/\b(this|that|it|the step|the equation|the problem|the answer)\b/i.test(prompt)) reason = 'referential';
+    else reason = 'explicit';
+  }
+
+  return {
+    isFollowUp,
+    reason,
+    activeProblem,
+    learningLevel: state.learning.level,
+    topicMastery: state.learning.topicMastery,
+    recentTurns,
+  };
+}
+
+export function formatTutorContinuityContext(context: TutorFollowUpContext): string {
+  const problem = context.activeProblem;
+  const mastery = Object.entries(context.topicMastery)
+    .filter(([, value]) => typeof value === 'number')
+    .map(([topic, value]) => `${topic}: ${Math.round(value)}%`)
+    .join(', ');
+
+  const recent = context.recentTurns
+    .slice(-6)
+    .map((turn) => `${turn.role === 'user' ? 'User' : 'Tutor'}: ${turn.content}`)
+    .join('\n');
+
+  return [
+    '[TUTOR CONTINUITY CONTEXT]',
+    `Follow-up detected: ${context.isFollowUp ? 'yes' : 'no'}`,
+    `Follow-up reason: ${context.reason}`,
+    `Learning level: ${context.learningLevel}`,
+    mastery ? `Topic mastery: ${mastery}` : 'Topic mastery: no recorded mastery yet',
+    problem
+      ? [
+          `Active problem: ${problem.rawProblem}`,
+          problem.canonicalExpression ? `Canonical expression: ${problem.canonicalExpression}` : '',
+          `Topic: ${problem.topic}`,
+          `Difficulty: ${problem.difficulty}`,
+          problem.authoritativeResult ? `Authoritative result: ${problem.authoritativeResult}` : '',
+          problem.currentSubstepIndex >= 0 ? `Current substep index: ${problem.currentSubstepIndex}` : '',
+        ].filter(Boolean).join('\n')
+      : 'Active problem: none',
+    recent ? `Recent conversation:\n${recent}` : 'Recent conversation: none',
+    'Use this context to resolve references such as “this”, “that”, “the next step”, and “why”. Do not invent a new problem when an active problem exists.',
+  ].join('\n');
+}
+
 export function exportTutorSessionMarkdown(state: TutorConversationState): string {
   const lines = [
     '# Math Tutor Session',
