@@ -19,17 +19,30 @@ export function retrieveMathematicsKnowledge(
   const queryText = `${query.query} ${query.calculatorExpression || ''}`.trim();
   const searchResults = searchKnowledgeBase(queryText, query.limit || 4);
 
-  // If topic was explicitly specified and not matched well, include concepts from that topic
-  if (query.topic && searchResults.length < 2) {
-    const topicItems = ALL_MATHEMATICS_KNOWLEDGE.filter(
-      (item) => item.topic.toLowerCase() === query.topic?.toLowerCase()
-    );
-    for (const item of topicItems) {
-      if (!searchResults.some((s) => s.id === item.id)) {
-        searchResults.push(item);
+  // When the caller states a topic, that topic is authoritative for the primary slot.
+  // Token scoring alone is unreliable for non-Latin scripts: a bare Urdu "algebra" query
+  // scored Linear Algebra vector items highest through incidental definition text, so the
+  // Tutor explained algebra using a dot-product definition. Rank the requested topic
+  // first and backfill from it when the text search surfaced too few of its concepts.
+  if (query.topic) {
+    const requestedTopic = query.topic.toLowerCase();
+    const isRequestedTopic = (item: MathKnowledgeItem) =>
+      item.topic.toLowerCase() === requestedTopic;
+
+    const matched = searchResults.filter(isRequestedTopic);
+    const remainder = searchResults.filter((item) => !isRequestedTopic(item));
+
+    if (matched.length < 2) {
+      for (const item of ALL_MATHEMATICS_KNOWLEDGE) {
+        if (matched.length >= 2) break;
+        if (isRequestedTopic(item) && !matched.some((m) => m.id === item.id)) {
+          matched.push(item);
+        }
       }
-      if (searchResults.length >= 4) break;
     }
+
+    searchResults.length = 0;
+    searchResults.push(...matched, ...remainder);
   }
 
   const primaryConcept = searchResults[0];

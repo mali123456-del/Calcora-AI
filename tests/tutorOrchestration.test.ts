@@ -39,7 +39,20 @@ async function main() {
     throw new Error(`Invalid topic normalization regression failed: ${JSON.stringify(normalizedTopic.pedagogy)}`);
   }
 
-  console.log(`Tutor orchestration tests passed: ${cases.length + 4}`);
+  const conceptualUrdu = await orchestrateProductionTutor({
+    prompt: 'مجھے algebra سمجھاؤ',
+    topic: 'Algebra',
+    language: 'ur',
+    offlineOnly: true,
+  });
+  if (!conceptualUrdu.answer.toLowerCase().includes('الجبرا') && !conceptualUrdu.answer.toLowerCase().includes('algebra')) {
+    throw new Error(`Conceptual algebra tutoring fallback failed: ${conceptualUrdu.answer}`);
+  }
+  if (/gemini/i.test(conceptualUrdu.answer)) {
+    throw new Error(`Gemini fallback leaked into offline tutor: ${conceptualUrdu.answer}`);
+  }
+
+  console.log(`Tutor orchestration tests passed: ${cases.length + 5}`);
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });

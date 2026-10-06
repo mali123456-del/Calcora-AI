@@ -127,7 +127,66 @@ export const TUTOR_LANGUAGES: readonly TutorLanguage[] = [
 
 const RTL = new Set(['ur','ar','fa','he','ps','sd','ug','yi']);
 const TIER_A = new Set(['en','ur','hi','ar','fr','de','es','pt','it','ru','zh','ja','ko','tr','id','bn','pa','ta','te','mr','gu','nl','pl']);
-const tierFor = (code: string): TutorLanguage['capability'] => TIER_A.has(code) ? 'A' : ['cs','sk','ro','hu','uk','vi','th','ms','sw','el','sv','da','no','fi'].includes(code) ? 'B' : 'C';
+const TIER_B = new Set(['cs','sk','ro','hu','uk','vi','th','ms','sw','el','sv','da','no','fi']);
+const tierFor = (code: string): TutorLanguage['capability'] => TIER_A.has(code) ? 'A' : TIER_B.has(code) ? 'B' : 'C';
+
+/**
+ * Evidence-based tutor capability, stated as what the local Tutor actually delivers.
+ * These tiers describe deterministic, offline behaviour only; a configured cloud model
+ * is a separate, opt-in path and is not represented here.
+ */
+export type TutorSupportLevel =
+  | 'FULL_TUTOR_SUPPORT'
+  | 'PARTIAL_TUTOR_SUPPORT'
+  | 'DETECTION_ONLY';
+
+export interface TutorSupportProfile {
+  code: string;
+  level: TutorSupportLevel;
+  /** What the Tutor can do locally in this language, in plain words. */
+  localBehaviour: string;
+}
+
+/**
+ * A language earns FULL_TUTOR_SUPPORT only when the local Tutor can actually produce
+ * a substantive answer in that language without a cloud model. That is currently the
+ * languages with a hand-written local answer template, not merely a registry entry.
+ */
+const FULL_LOCAL_ANSWER_LANGUAGES = new Set(['en', 'ur']);
+
+const LEVEL_BEHAVIOUR: Record<TutorSupportLevel, string> = {
+  FULL_TUTOR_SUPPORT:
+    'The local Tutor writes its explanation in this language: concepts, hints, mistake checks and document answers.',
+  PARTIAL_TUTOR_SUPPORT:
+    'The local Tutor detects this language and localizes labels, hints and document answers; longer concept prose is rendered from the local English/Urdu templates.',
+  DETECTION_ONLY:
+    'The language is detected and its metadata is used for localisation of chrome and direction; the Tutor does not yet compose a full local explanation in it.',
+};
+
+export function getTutorSupportLevel(code: string): TutorSupportLevel {
+  if (FULL_LOCAL_ANSWER_LANGUAGES.has(code)) return 'FULL_TUTOR_SUPPORT';
+  const tier = tierFor(code);
+  if (tier === 'A' || tier === 'B') return 'PARTIAL_TUTOR_SUPPORT';
+  return 'DETECTION_ONLY';
+}
+
+export function getTutorSupportProfile(code: string): TutorSupportProfile {
+  const language = getTutorLanguage(code);
+  const level = getTutorSupportLevel(language.code);
+  return { code: language.code, level, localBehaviour: LEVEL_BEHAVIOUR[level] };
+}
+
+/** Counts measured from the registry, for honest capability reporting. */
+export function getTutorSupportCounts(): Record<TutorSupportLevel, number> {
+  const counts: Record<TutorSupportLevel, number> = {
+    FULL_TUTOR_SUPPORT: 0,
+    PARTIAL_TUTOR_SUPPORT: 0,
+    DETECTION_ONLY: 0,
+  };
+  for (const language of TUTOR_LANGUAGES) counts[getTutorSupportLevel(language.code)] += 1;
+  return counts;
+}
+
 
 export const DEFAULT_TUTOR_LANGUAGE = 'en';
 

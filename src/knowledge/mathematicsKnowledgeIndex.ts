@@ -1,4 +1,5 @@
 import { MathKnowledgeItem, MATHEMATICS_KNOWLEDGE_VERSION } from './knowledgeTypes';
+import { auditKnowledgeCorpus } from './knowledgeVerification';
 import { arithmeticKnowledge } from './mathematics/arithmetic';
 import { algebraKnowledge } from './mathematics/algebra';
 import { geometryKnowledge } from './mathematics/geometry';
@@ -12,7 +13,14 @@ import { precalculusDiscreteKnowledge } from './mathematics/precalculusDiscrete'
 
 export { MATHEMATICS_KNOWLEDGE_VERSION };
 
-export const ALL_MATHEMATICS_KNOWLEDGE: MathKnowledgeItem[] = [
+/**
+ * The authored corpus, before auditing.
+ *
+ * Kept unexported-by-accident in spirit: callers should use `ALL_MATHEMATICS_KNOWLEDGE`,
+ * which carries the computed `verificationStatus`. Retaining the raw list makes the
+ * audit reproducible and diffable rather than a one-time manual edit.
+ */
+const AUTHORED_MATHEMATICS_KNOWLEDGE: MathKnowledgeItem[] = [
   ...arithmeticKnowledge,
   ...algebraKnowledge,
   ...geometryKnowledge,
@@ -24,6 +32,16 @@ export const ALL_MATHEMATICS_KNOWLEDGE: MathKnowledgeItem[] = [
   ...physicsEngineeringKnowledge,
   ...precalculusDiscreteKnowledge,
 ];
+
+/**
+ * The corpus with an evidence-based `verificationStatus` on every item.
+ *
+ * The status is computed by re-deriving each item's worked examples with the
+ * deterministic engine, so it reflects a real audit rather than an assertion.
+ */
+export const ALL_MATHEMATICS_KNOWLEDGE: MathKnowledgeItem[] = auditKnowledgeCorpus(
+  AUTHORED_MATHEMATICS_KNOWLEDGE,
+);
 
 // Pre-indexed Maps for constant-time lookup
 export const KNOWLEDGE_BY_ID = new Map<string, MathKnowledgeItem>(

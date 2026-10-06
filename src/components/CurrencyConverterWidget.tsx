@@ -72,10 +72,10 @@ export const CurrencyConverterWidget: React.FC<CurrencyConverterWidgetProps> = (
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize and attempt live rates fetch
+  // Initialize from local cache or bundled baseline. Live rates are fetched only
+  // after the learner explicitly selects Refresh Live Exchange Rates.
   useEffect(() => {
     CurrencyRateProvider.init();
-    CurrencyRateProvider.fetchLiveRates().catch(() => {});
   }, []);
 
   // Focus search input when picker opens

@@ -1,4 +1,5 @@
 import { getTutorLanguageCapability, type TutorLanguage } from '../ai/tutorLanguages';
+import { detectLanguage } from './languageDetection';
 
 export interface LanguageKnowledgeProfile {
   code: string;
@@ -26,6 +27,33 @@ const profiles: Record<string, Omit<LanguageKnowledgeProfile,'code'>> = {
   it: { grammar:['gender','articles','agreement','conjugation','clitics','subjunctive'], teachingRules:['teach natural sentence rhythm and agreement'], commonLearnerIssues:['article gender','prepositions','conjugation'], registerGuidance:'Distinguish formal and conversational Italian.' },
   ru: { grammar:['case','aspect','gender','verb motion','agreement','Cyrillic orthography'], teachingRules:['explain case function before endings'], commonLearnerIssues:['case endings','aspect pairs','verb of motion'], registerGuidance:'Use standard Russian and explain colloquial forms separately.' },
   tr: { grammar:['agglutination','vowel harmony','case','suffixes','word order'], teachingRules:['show morpheme boundaries when useful'], commonLearnerIssues:['suffix ordering','vowel harmony','case'], registerGuidance:'Use standard Turkish and distinguish formal/informal register.' },
+  id: { grammar:['word order (SVO)','affixation (meN-, ber-, -kan, -nya)','no grammatical gender','time markers instead of tense inflection','reduplication'], teachingRules:['explain affix function instead of translating word by word','distinguish formal (saya/anda) from informal (aku/kamu) register'], commonLearnerIssues:['affix selection','formal vs informal pronouns','spelling (ejaan)'], registerGuidance:'Use standard Indonesian (bahasa baku) unless colloquial usage is requested.' },
+  ms: { grammar:['word order (SVO)','prefix and suffix affixation','no grammatical gender','no tense inflection','classifier use'], teachingRules:['distinguish Malaysian and Indonesian vocabulary where it matters','explain affixes from the root word'], commonLearnerIssues:['affix selection','regional vocabulary','spelling'], registerGuidance:'Use standard Malay (bahasa baku) and flag regional variation when relevant.' },
+  ta: { grammar:['agglutinative suffixes','eight-case system','verb conjugation by person, gender and number','diglossia (literary vs spoken)','Tamil script'], teachingRules:['separate literary and spoken Tamil explicitly','show how case suffixes attach to the stem'], commonLearnerIssues:['case suffix choice','diglossia','verb agreement'], registerGuidance:'Use standard written Tamil unless the spoken variety is requested.' },
+  te: { grammar:['agglutination','case suffixes','verb conjugation by person and number','honorific levels','Telugu script'], teachingRules:['explain suffix stacking from the root','note formal and colloquial verb forms'], commonLearnerIssues:['case suffixes','verb agreement','honorific choice'], registerGuidance:'Use standard Telugu and note colloquial forms separately.' },
+  mr: { grammar:['gender','postpositions','verb agreement','compound verbs','Devanagari orthography'], teachingRules:['explain gender and agreement explicitly','support Devanagari and Roman Marathi input'], commonLearnerIssues:['gender agreement','postposition selection','compound verb choice'], registerGuidance:'Distinguish formal Marathi from everyday spoken usage.' },
+  gu: { grammar:['gender','postpositions','verb agreement','ergative-like patterns','Gujarati script'], teachingRules:['explain agreement patterns with examples','support Gujarati script and romanized input'], commonLearnerIssues:['gender agreement','postposition choice','verb endings'], registerGuidance:'Use standard Gujarati and explain register differences when relevant.' },
+  nl: { grammar:['V2 word order','de/het gender','verb conjugation and tenses','separable verbs','diminutives'], teachingRules:['explain verb-second word order explicitly','distinguish formal (u) from informal (je) address'], commonLearnerIssues:['de/het article choice','word order','verb endings','separable verbs'], registerGuidance:'Distinguish formal and informal Dutch and note regional variants when relevant.' },
+  pl: { grammar:['seven-case system','verb aspect','grammatical gender','conjugation','flexible word order'], teachingRules:['teach case function before endings','distinguish formal (pani) from informal (ty) address'], commonLearnerIssues:['case endings','aspect pairs','gender agreement','consonant alternations'], registerGuidance:'Use standard Polish and separate formal from informal address.' },
+  cs: { grammar:['seven-case system','verb aspect','grammatical gender','conjugation','word order'], teachingRules:['explain case roles before listing endings','distinguish formal (vy) from informal (ty)'], commonLearnerIssues:['case endings','aspect','gender','vowel changes'], registerGuidance:'Use standard Czech and distinguish formal from informal address.' },
+  sk: { grammar:['case system','verb aspect','grammatical gender','conjugation','word order'], teachingRules:['explain case function before forms','distinguish formal and informal address'], commonLearnerIssues:['case endings','aspect','gender agreement'], registerGuidance:'Use standard Slovak and explain regional variants when relevant.' },
+  ro: { grammar:['nominative/accusative and genitive/dative cases','gendered nouns','suffixed definite article','verb conjugation','subjunctive'], teachingRules:['show how the definite article attaches to the noun','distinguish formal (dumneavoastră) from informal (tu) address'], commonLearnerIssues:['article suffix','noun gender','verb endings','diacritics'], registerGuidance:'Use standard Romanian and mark formal versus informal address.' },
+  hu: { grammar:['agglutination','extensive case system','vowel harmony','definite vs indefinite conjugation','word order'], teachingRules:['show morpheme boundaries','explain vowel harmony as a system'], commonLearnerIssues:['case suffixes','vowel harmony','verb conjugation types'], registerGuidance:'Distinguish formal (ön) from informal (te) address.' },
+  uk: { grammar:['seven-case system','verb aspect','grammatical gender','conjugation','Cyrillic orthography'], teachingRules:['explain case function before endings','distinguish Ukrainian from Russian forms explicitly'], commonLearnerIssues:['case endings','aspect pairs','gender agreement','false friends with Russian'], registerGuidance:'Use standard Ukrainian and distinguish formal from informal address.' },
+  vi: { grammar:['tonal system','SVO word order','classifiers','no tense inflection (time markers instead)','kinship-based pronoun system'], teachingRules:['explain tones alongside spelling','choose pronouns by relationship and formality'], commonLearnerIssues:['tone marks','pronoun selection','classifiers','word order'], registerGuidance:'Use standard Vietnamese and select pronouns appropriate to the relationship.' },
+  th: { grammar:['tonal system','no verb conjugation or tense inflection','classifiers','politeness particles','Thai script'], teachingRules:['explain tones with phonetics','note that tense is conveyed by time words and context'], commonLearnerIssues:['tones','classifiers','particles','formal vs informal pronouns'], registerGuidance:'Use standard Thai and adjust politeness particles to the register.' },
+  sw: { grammar:['noun classes','subject, tense and object infixes on verbs','subject-verb agreement by class','Bantu morphological structure'], teachingRules:['explain noun classes as singular/plural pairings','show agreement prefixes explicitly'], commonLearnerIssues:['noun class agreement','verb infix order','prefix selection'], registerGuidance:'Use standard Kiswahili (Kiunguja) and note regional variation.' },
+  el: { grammar:['noun case system','grammatical gender','articles','verb conjugation','verb aspect','Greek alphabet'], teachingRules:['explain case function before endings','explain aspect rather than literal tense mapping'], commonLearnerIssues:['case endings','gender and articles','verb endings','aspect'], registerGuidance:'Distinguish formal and everyday Greek registers.' },
+  sv: { grammar:['V2 word order','en/ett gender','verb conjugation','definite noun forms','particles'], teachingRules:['explain verb-second word order','distinguish formal (ni) from informal (du) address'], commonLearnerIssues:['en/ett article choice','word order','definite forms'], registerGuidance:'Use standard Swedish and distinguish formal from informal address.' },
+  da: { grammar:['V2 word order','en/et gender','verb conjugation','definite noun forms','particles'], teachingRules:['explain verb-second word order','distinguish formal (De) from informal (du) address'], commonLearnerIssues:['en/et article choice','word order','definite forms','spelling versus pronunciation'], registerGuidance:'Use standard Danish and distinguish formal from informal address.' },
+  no: { grammar:['V2 word order','en/ei/et gender','verb conjugation','definite noun forms','particles'], teachingRules:['explain verb-second word order','distinguish bokmål and nynorsk where relevant'], commonLearnerIssues:['gender/article choice','word order','definite forms'], registerGuidance:'Default to bokmål unless nynorsk is requested.' },
+  fi: { grammar:['agglutination','extensive case system','vowel harmony','consonant gradation','no grammatical gender'], teachingRules:['show morpheme boundaries','explain vowel harmony and consonant gradation as systems'], commonLearnerIssues:['case endings','vowel harmony','consonant gradation','partitive usage'], registerGuidance:'Distinguish formal and informal address; Finnish has no grammatical gender.' },
+  he: { grammar:['grammatical gender','number agreement','binyan verb patterns','definiteness','construct state (smichut)','root-pattern morphology','right-to-left script'], teachingRules:['explain the three-letter root and binyan system','preserve Hebrew script and vowel points where useful'], commonLearnerIssues:['gender agreement','verb patterns','construct state','definite article'], registerGuidance:'Use Modern Hebrew and explain register differences where relevant.' },
+  af: { grammar:['no verb conjugation by person','double negation','word order','simple inflectional morphology'], teachingRules:['note that Afrikaans lost most verb inflection','explain double negation explicitly'], commonLearnerIssues:['double negation','word order','article usage'], registerGuidance:'Use standard Afrikaans and note where it differs from Dutch.' },
+  ne: { grammar:['gender','postpositions','verb agreement','honorific levels','Devanagari orthography'], teachingRules:['explain honorific verb forms','support Devanagari and romanized Nepali'], commonLearnerIssues:['postpositions','honorific choice','verb agreement'], registerGuidance:'Distinguish informal, polite and honorific registers.' },
+  ml: { grammar:['agglutination','case suffixes','verb conjugation','diglossia (literary vs spoken)','Malayalam script'], teachingRules:['separate literary and spoken Malayalam','show suffix attachment from the stem'], commonLearnerIssues:['case suffixes','diglossia','verb agreement'], registerGuidance:'Use standard written Malayalam unless the spoken variety is requested.' },
+  kn: { grammar:['agglutination','case system','verb conjugation by person and number','honorific levels','Kannada script'], teachingRules:['explain suffix stacking','note honorific verb forms'], commonLearnerIssues:['case suffixes','verb agreement','honorific choice'], registerGuidance:'Use standard Kannada and note colloquial forms separately.' },
+  si: { grammar:['agglutination','case markers','verb conjugation','diglossia (literary vs spoken)','Sinhala script'], teachingRules:['separate literary and spoken Sinhala','explain case markers with examples'], commonLearnerIssues:['case markers','diglossia','verb forms'], registerGuidance:'Use standard written Sinhala unless the spoken variety is requested.' },
 };
 
 const COMMON_KNOWLEDGE = [
@@ -51,6 +79,9 @@ export function getLanguageKnowledgeProfile(code: string): LanguageKnowledgeProf
   };
 }
 
+/** Number of languages with a hand-authored, deep grammar profile. */
+export const DEEP_LANGUAGE_PROFILE_COUNT = Object.keys(profiles).length;
+
 export function buildMultilingualTutorKnowledge(languageCode: string): string {
   const profile = getLanguageKnowledgeProfile(languageCode);
   return [
@@ -65,14 +96,13 @@ export function buildMultilingualTutorKnowledge(languageCode: string): string {
   ].join('\n');
 }
 
+/**
+ * Detects the language of a piece of text. Delegates to the multilingual
+ * detector, which covers scripts, diacritics, romanization and function words
+ * for 40+ languages. Falls back to English when no signal is present.
+ */
 export function detectLanguageFromText(text: string): string {
-  const value = text.toLowerCase();
-  if (/[\u0600-\u06ff]/.test(value)) return /[\u067e\u0686\u0698\u06af\u06be\u06d2]/.test(value) ? 'ur' : 'ar';
-  if (/[\u0900-\u097f]/.test(value)) return 'hi';
-  if (/[\u4e00-\u9fff]/.test(value)) return 'zh';
-  if (/[\u3040-\u30ff]/.test(value)) return 'ja';
-  if (/[\uac00-\ud7af]/.test(value)) return 'ko';
-  return 'en';
+  return detectLanguage(text);
 }
 
 export function buildMultilingualSystemInstruction(language: TutorLanguage, userPrompt: string): string {

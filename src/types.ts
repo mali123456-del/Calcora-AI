@@ -3,7 +3,7 @@ export type AngleMode = 'DEG' | 'RAD' | 'GRAD';
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type CalculatorSubMode = 'standard' | 'scientific' | 'engineering' | 'programmer';
 export type PrecisionMode = 'auto' | 2 | 4 | 6 | 8 | 10 | 12;
-export type ActiveTab = 'home'|'calculator'|'graph'|'equations'|'calculus'|'matrix'|'programmer'|'statistics'|'engineering'|'units'|'finance'|'currency'|'ai'|'tutor'|'formulas'|'practice'|'multimodal'|'datalab'|'workspaces'|'history'|'settings';
+export type ActiveTab = 'home'|'calculator'|'graph'|'equations'|'calculus'|'matrix'|'programmer'|'statistics'|'engineering'|'units'|'finance'|'currency'|'ai'|'tutor'|'formulas'|'practice'|'multimodal'|'datalab'|'notebook'|'workspaces'|'history'|'settings';
 export interface HistoryItem { id:string; expression:string; result:string; angleMode:AngleMode; precision?:PrecisionMode; mode?:CalculatorSubMode; category?:string; isFavorite?:boolean; notes?:string; verified?:boolean; timestamp:number; }
 export interface CalculationResult { value:number; display:string; exactFraction?:string; error?:string; steps?:string[]; }
 export interface Fraction { numerator:number; denominator:number; }
@@ -41,7 +41,12 @@ export interface CalculationNote { id:string; title:string; content:string; asso
 export interface WorkspaceSession { id:string; name:string; description?:string; category:'general'|'physics'|'finance'|'engineering'|'math'; historyItems:HistoryItem[]; notes:CalculationNote[]; created:number; lastModified:number; }
 export interface AppSettings { theme:ThemeMode; defaultMode:CalculatorSubMode; defaultAngle:AngleMode; precision:PrecisionMode; thousandsSeparator:boolean; scientificNotationThreshold:number; highContrast:boolean; reducedMotion:boolean; aiMode:'copilot'|'tutor'|'strict'; explanationDetail:'concise'|'detailed'|'pedagogical'; autoSaveHistory:boolean; maxHistoryRecords:number; }
 export type AIMode='explain'|'solve'|'teach'|'verify'|'practice'|'hint'|'quiz';
-export interface AIMessage { id:string; role:'user'|'assistant'; content:string; expression?:string; result?:string; steps?:string[]; formula?:string; isVerified?:boolean; verificationNote?:string; timestamp:number; isError?:boolean; }
+export type AIMessageVerification = import('./verification/verificationStates').VerificationOutcome;
+export interface AIMessage { id:string; role:'user'|'assistant'; content:string; expression?:string; result?:string; steps?:string[]; formula?:string; isVerified?:boolean; verificationNote?:string; /**
+ * Canonical four-state verification for this message. When present it is the single
+ * source of truth for the badge; `isVerified` is a derived legacy convenience.
+ */
+verification?:AIMessageVerification; responseSource?:'gemini'|'local-deterministic'|'local-model'|'document-grounded'|'document-insufficient-evidence'; providerMessage?:string; timestamp:number; isError?:boolean; }
 export interface QuizQuestion { id:string; topic:string; difficulty:'beginner'|'intermediate'|'advanced'; question:string; options:string[]; correctOptionIndex:number; explanation:string; hints:string[]; }
 
 

@@ -16,12 +16,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run lint
-      - run: npm run test:core
-      - run: npm run test:tutor
-      - run: npm run test:intelligence
-      - run: npm run test:learning
-      - run: npm run build
+      - run: npm run verify
 
   windows-package:
     runs-on: windows-latest
@@ -38,8 +33,7 @@ jobs:
         with:
           name: calcora-windows
           path: |
-            dist/*.exe
-            dist/**/*.exe
             release/*.exe
-            dist-electron/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error

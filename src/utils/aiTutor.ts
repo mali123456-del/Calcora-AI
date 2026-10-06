@@ -60,7 +60,15 @@ export type MistakeCategory =
   | 'unit_error'
   | 'domain_restriction'
   | 'assumption_error'
-  | 'conceptual_misunderstanding';
+  | 'conceptual_misunderstanding'
+  // Added by the misconception-aware hint work. These are observable error
+  // patterns that the original taxonomy could not distinguish, which made distinct
+  // mistakes receive identical hints. They extend the existing union rather than
+  // replacing it, so every pre-existing consumer keeps working.
+  | 'operation_error'
+  | 'order_of_operations_error'
+  | 'fraction_error'
+  | 'variable_isolation_error';
 
 export interface MistakeAnalysis {
   errorType: MistakeCategory;

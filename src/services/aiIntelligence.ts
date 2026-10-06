@@ -27,7 +27,7 @@ export const AI_INTELLIGENCE_SOURCES:readonly IntelligenceSource[]=[
 {id:'mcp-docs',name:'Model Context Protocol',kind:'official-docs',url:'https://modelcontextprotocol.io/',enabled:true,tags:['mcp','tools','agents','documentation']}
 ];
 
-const ALLOWED_HOSTS=new Set(['huggingface.co','ollama.com','api.github.com','platform.openai.com','docs.anthropic.com','ai.google.dev','docs.mistral.ai','console.groq.com','docs.cohere.com','docs.langchain.com','docs.llamaindex.ai','modelcontextprotocol.io']);
+const ALLOWED_HOSTS=new Set(['huggingface.co','ollama.com','api.github.com','platform.openai.com','docs.anthropic.com','ai.google.dev','docs.mistral.ai','console.groq.com','docs.cohere.com','docs.langchain.com','docs.llamaindex.ai','modelcontextprotocol.org','modelcontextprotocol.io']);
 function allowed(raw:string){try{const u=new URL(raw);return u.protocol==='https:'&&ALLOWED_HOSTS.has(u.hostname)}catch{return false}}
 async function fetchBounded(url:string){
  if(!allowed(url))throw new Error('Source URL is not on Calcora intelligence allowlist');
@@ -53,6 +53,9 @@ export async function persistAIIntelligence(run:IntelligenceRun,items:Intelligen
 }const activatedCount=fresh.filter(i=>i.kind==='official-docs'||i.kind==='model-catalog'||i.kind==='dataset-catalog'||i.kind==='release-feed').length;const {error}=await supabase.from('ai_intelligence_runs').insert({started_at:run.startedAt,finished_at:run.finishedAt,scanned_sources:run.scannedSources,fetched_sources:run.fetchedSources,discovered_items:run.discoveredItems,new_items:fresh.length,activated_items:activatedCount,errors:run.errors});if(error)throw error;return {...run,newItems:fresh.length,activatedItems:activatedCount}}
 let scheduled=false,lastRun:IntelligenceRun|null=null;
 export async function runAIIntelligenceCycle(){const r=await scanAIIntelligenceSources();lastRun=await persistAIIntelligence(r.run,r.items);return lastRun}
+export function isAIIntelligenceSyncEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CALCORA_ENABLE_INTELLIGENCE_SYNC === 'true';
+}
 export async function getAIIntelligenceStatus(){
  const url=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  const base={scheduled,lastRun,sources:AI_INTELLIGENCE_SOURCES.map(({id,name,kind,enabled})=>({id,name,kind,enabled})),metrics:{intelligenceItems:0,activeItems:0,embeddings:0,evaluationRuns:0,evaluations:0,passedEvaluations:0,passRate:null as number|null,lastEmbeddingUpdate:null as string|null,lastEvaluationAt:null as string|null}};
@@ -75,7 +78,14 @@ export async function getAIIntelligenceStatus(){
   return {...base,metrics:{intelligenceItems:intelligenceItems??0,activeItems:activeItems??0,embeddings:embeddings??0,evaluationRuns:evaluationRuns??0,evaluations:total,passedEvaluations:passedEvaluations??0,passRate:total?(passedEvaluations??0)/total:null,lastEmbeddingUpdate:lastEmbedding?.updated_at??null,lastEvaluationAt:lastEvaluation?.created_at??null}};
  }catch{return base}
 }
-export function startAIIntelligenceScheduler(){if(scheduled)return;scheduled=true;void runAIIntelligenceCycle().catch(()=>undefined);setInterval(()=>void runAIIntelligenceCycle().catch(()=>undefined),24*60*60*1000)}
+export function startAIIntelligenceScheduler(enabled = isAIIntelligenceSyncEnabled()): boolean {
+ if (!enabled || scheduled) return false;
+ scheduled = true;
+ void runAIIntelligenceCycle().catch(() => undefined);
+ const timer = setInterval(() => void runAIIntelligenceCycle().catch(() => undefined), 24 * 60 * 60 * 1000);
+ timer.unref?.();
+ return true;
+}
 export async function getActiveAIIntelligenceContext(limit=12){
  const url=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!url||!key)return [];
  const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const {data}=await supabase.from('ai_intelligence_items').select('source_name,kind,title,url,summary,tags,published_at,relevance_score').eq('status','active').order('relevance_score',{ascending:false}).order('published_at',{ascending:false}).limit(Math.min(Math.max(limit,1),20));return data??[];

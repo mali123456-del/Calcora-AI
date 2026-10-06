@@ -2,6 +2,29 @@ import { executeMathTool } from '../engine/toolLayer';
 import { extractMathProblem, type ExtractedMathProblem } from '../engine/problemExtractor';
 import type { MathToolResult } from '../types';
 import type { TutorMode, DifficultyLevel, LearningObjective, MathTopic } from '../utils/aiTutor';
+import { verifyCalculation, verifyEquation, verifyUnsupported } from '../verification/independentVerifier';
+import type { VerificationOutcome } from '../verification/verificationStates';
+
+/**
+ * Scope note (duplicate-orchestrator audit)
+ * -----------------------------------------
+ * This module and `src/services/tutorOrchestrator.ts` both expose an
+ * `orchestrateTutor`, but they are not interchangeable and were not merged:
+ *
+ *   - `services/tutorOrchestrator` is the canonical production Tutor. It owns
+ *     pedagogy, multilingual grounding, mode handling and the verification
+ *     outcome, and it is the path the browser UI reaches.
+ *   - this module is the thin deterministic pre-computation used by the optional
+ *     cloud branch to obtain an authoritative number before synthesis. Its
+ *     `answer` contract is deliberately the bare result string.
+ *
+ * Merging them would change this module's `answer` contract and break existing
+ * callers, so instead this module now reports the same canonical four-state
+ * verification as the production Tutor. The remaining duplication is that
+ * `/api/ai/math` computes the deterministic result once per branch rather than
+ * once per request; that is recorded as a known limitation rather than refactored
+ * blind.
+ */
 
 export interface TutorOrchestrationOptions {
   mode?: TutorMode;
@@ -17,6 +40,8 @@ export interface TutorOrchestrationResult {
   deterministic: MathToolResult | null;
   intent: ExtractedMathProblem['kind'];
   authoritative: boolean;
+  /** Canonical four-state verification, matching the production Tutor contract. */
+  verification: VerificationOutcome;
   answer: string;
   steps: string[];
   expression: string | null;
@@ -85,11 +110,35 @@ export async function orchestrateTutor(prompt: string, options: TutorOrchestrati
   const deterministic = await executeExtracted(extracted);
   const mode = options.mode ?? 'tutor';
   const pedagogical = pedagogicalResponse(prompt, deterministic, options);
+
+  // Independent re-derivation, using the same canonical contract as the
+  // production Tutor. `authoritative` is derived from this rather than from the
+  // tool merely having reported success.
+  const verification: VerificationOutcome = (() => {
+    if (!deterministic?.success) return verifyUnsupported(prompt);
+    const reported = String(deterministic.result);
+    if (extracted.kind === 'solveEquation' && extracted.equation) {
+      const roots = reported.split(',').map((r) => r.trim()).filter((r) => r.length > 0);
+      return verifyEquation(extracted.equation, roots);
+    }
+    if (extracted.kind === 'calculate' && extracted.expression) {
+      return verifyCalculation(extracted.expression, reported);
+    }
+    return verifyUnsupported(prompt);
+  })();
+
   return {
     success: true,
     deterministic,
     intent: extracted.kind,
+    // `authoritative` keeps its original, narrower meaning: the deterministic engine
+    // produced an authoritative result. It is deliberately NOT the same as
+    // "independently verified" — a definite integral is authoritative here because
+    // the engine solved it, even though this build cannot re-derive an antiderivative
+    // independently. Callers that need the stronger guarantee must read
+    // `verification.state === 'VERIFIED'`.
     authoritative: Boolean(deterministic?.success && deterministic.verificationBadge.isVerified),
+    verification,
     answer: pedagogical.answer,
     steps: pedagogical.steps,
     expression: deterministic?.success ? (deterministic.expression || null) : null,

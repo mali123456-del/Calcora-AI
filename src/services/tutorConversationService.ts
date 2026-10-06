@@ -127,7 +127,10 @@ export function updateTutorProblemContext(
     messageCount: state.messages.length,
     updatedAt: Date.now(),
   };
-  return persist({ ...state, problemContext: next });
+  const learning = update.difficulty
+    ? { ...state.learning, level: update.difficulty }
+    : state.learning;
+  return persist({ ...state, problemContext: next, learning });
 }
 
 export function adaptTutorLearningLevel(state: TutorConversationState, outcome: { correct: boolean; topic?: MathTopic }): TutorConversationState {
@@ -152,7 +155,13 @@ export function adaptTutorLearningLevel(state: TutorConversationState, outcome: 
 
 export function setTutorMode(state: TutorConversationState, mode: TutorMode): TutorConversationState {
   const reset = createTutorConversationState(state.id, state.title);
-  return persist({ ...reset, mode, createdAt: state.createdAt });
+  return persist({
+    ...reset,
+    mode,
+    createdAt: state.createdAt,
+    problemContext: state.problemContext,
+    learning: state.learning,
+  });
 }
 
 export function resetTutorSession(state: TutorConversationState): TutorConversationState {
@@ -169,7 +178,7 @@ export interface TutorFollowUpContext {
 }
 
 const FOLLOW_UP_PATTERNS = [
-  /\b(what next|next step|continue|go on|keep going|explain more|more detail|why|how did you|how do i|what does (this|that) mean|i don't understand|check (my|this) answer|is (my|this) answer|another step)\b/i,
+  /\b(what next|what do i do next|the next step|next step|continue|go on|keep going|explain more|more detail|why|how did you|how do i|what does (this|that) mean|i don't understand|check (my|this) answer|is (my|this) answer|another step)\b/i,
   /\b(this|that|it|the answer|the step|the equation|the problem)\b/i,
 ];
 
@@ -193,7 +202,7 @@ export function buildTutorFollowUpContext(
 
   let reason: TutorFollowUpContext['reason'] = 'new-problem';
   if (isFollowUp) {
-    if (/\b(what next|next step|continue|go on|keep going)\b/i.test(prompt)) reason = 'continuation';
+    if (/\b(what next|what do i do next|the next step|next step|continue|go on|keep going)\b/i.test(prompt)) reason = 'continuation';
     else if (/\b(this|that|it|the step|the equation|the problem|the answer)\b/i.test(prompt)) reason = 'referential';
     else reason = 'explicit';
   }

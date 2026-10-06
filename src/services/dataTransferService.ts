@@ -60,7 +60,7 @@ export function stripSecretsRecursively<T>(value: T): T {
   if (value && typeof value === 'object') {
     const output: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (SECRET_KEY.test(key) || containsSecret(child)) continue;
+      if (SECRET_KEY.test(key) || (typeof child === 'string' && SECRET_VALUE.test(child))) continue;
       output[key] = stripSecretsRecursively(child);
     }
     return output as T;
@@ -128,7 +128,7 @@ export function validateAndImportCalcoraData(json: string): CalcoraDataSnapshot 
   if (containsSecret(parsed)) throw new Error('Import contains credentials or secrets and was rejected');
   const value = parsed as Record<string, unknown>;
   if (value.version !== 1) throw new Error('Unsupported Calcora data version');
-  const snapshot = stripSecretsRecursively({
+  const snapshot = stripSecretsRecursively<CalcoraDataSnapshot>({
     version: 1,
     exportedAt: typeof value.exportedAt === 'number' ? value.exportedAt : Date.now(),
     calculationHistory: validateHistory(value.calculationHistory),

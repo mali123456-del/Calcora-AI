@@ -28,6 +28,13 @@ import {
   validateAndImportWorkspace,
   DEFAULT_WORKSPACE,
 } from '../engine/workspaceEngine';
+import {
+  exportCalcoraData,
+  loadCalcoraDataSnapshot,
+  saveCalcoraDataSnapshot,
+  validateAndImportCalcoraData,
+  deleteCalcoraData,
+} from '../services/dataTransferService';
 
 interface WorkspaceModalProps {
   isOpen: boolean;

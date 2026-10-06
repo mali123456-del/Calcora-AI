@@ -25,6 +25,20 @@ expectValue('sin(pi/2)', 1, 'RAD');
 expectValue('ncr(5,2)', 10);
 expectValue('root(27,3)', 3);
 
+// Regression: `fact` is the compact alias for `factorial`, but the evaluator only
+// listed `factorial`, so the alias failed with "Unrecognized function: fact".
+expectValue('fact(5)', 120);
+expectValue('fact(0)', 1);
+expectValue('factorial(5)', 120);
+expectValue('5!', 120);
+
+// Postfix *word* forms (`5 fact`, `5 sin`, `5 sqrt`) are uniformly unsupported because
+// the tokeniser reads a bare word after a number as implicit multiplication. That is
+// pre-existing, function-agnostic behaviour, not a factorial regression, and nothing
+// in the codebase emits it.
+assert.equal(calculateExpression('5 fact').display, 'Error');
+assert.equal(calculateExpression('5 sin').display, 'Error');
+
 expectError('1.2.3');
 expectError('1e+');
 expectError('1e-');

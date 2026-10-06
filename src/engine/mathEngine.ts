@@ -548,6 +548,7 @@ export function evaluateRPN(rpn: Token[], angleMode: AngleMode = 'DEG'): number 
           'exp',
           'recip',
           'factorial',
+          'fact',
         ].includes(fn)
       ) {
         if (stack.length < 1) {
@@ -677,6 +678,7 @@ export function evaluateRPN(rpn: Token[], angleMode: AngleMode = 'DEG'): number 
             stack.push(1 / x);
             break;
           case 'factorial':
+          case 'fact':
             stack.push(factorial(x));
             break;
           default:

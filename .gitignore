@@ -1,8 +1,21 @@
 node_modules/
 build/
 dist/
+dist-electron/
+release/
+release-verify/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+
+.forge-permissions.json
+
+# Local AI-tooling session transcripts. These are generated scratch output from
+# assistant sessions, not project source, and are kept on disk but never committed.
+chat_*.md
+*-chat-*.md
+.freebuff/
+.kilo/
+.kombai/

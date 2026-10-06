@@ -1,7 +1,7 @@
 /** Privacy boundary for Calcora AI. Private/Offline mode must never fall back to a cloud AI endpoint. */
 export type PrivacyMode = 'cloud' | 'private' | 'offline';
 
-export interface LocalProviderStatus { configured:boolean; endpoint:string|null; provider:'ollama'|'none'; }
+export interface LocalProviderStatus { configured:boolean; endpoint:null; provider:'llama.cpp'|'none'; }
 export interface OfflinePolicy { mode:PrivacyMode; allowCloudAI:boolean; allowLocalAI:boolean; failClosed:boolean; label:string; }
 
 export function getOfflinePolicy(mode:PrivacyMode='cloud'):OfflinePolicy{
@@ -10,9 +10,9 @@ export function getOfflinePolicy(mode:PrivacyMode='cloud'):OfflinePolicy{
 }
 
 export function getLocalProviderStatus():LocalProviderStatus{
-  if(typeof window==='undefined') return {configured:false,endpoint:null,provider:'none'};
-  const endpoint=(window as Window & {__CALCORA_OLLAMA_URL__?:string}).__CALCORA_OLLAMA_URL__ || import.meta.env.VITE_OLLAMA_URL || null;
-  return {configured:Boolean(endpoint),endpoint,provider:endpoint?'ollama':'none'};
+  // Inference is proxied through Calcora's own API. The browser does not call a
+  // provider endpoint directly, which keeps model routing inside the privacy boundary.
+  return {configured:false,endpoint:null,provider:'none'};
 }
 
 export function localAIEndpointAvailable():boolean{return getLocalProviderStatus().configured;}

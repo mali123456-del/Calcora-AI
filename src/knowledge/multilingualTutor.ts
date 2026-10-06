@@ -39,6 +39,24 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
   { code: 'zh', name: 'Chinese', nativeName: '中文' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'ko', name: 'Korean', nativeName: '한국어' },
+  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
+  { code: 'pl', name: 'Polish', nativeName: 'Polski' },
+  { code: 'cs', name: 'Czech', nativeName: 'Čeština' },
+  { code: 'sk', name: 'Slovak', nativeName: 'Slovenčina' },
+  { code: 'ro', name: 'Romanian', nativeName: 'Română' },
+  { code: 'hu', name: 'Hungarian', nativeName: 'Magyar' },
+  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt' },
+  { code: 'th', name: 'Thai', nativeName: 'ไทย' },
+  { code: 'sw', name: 'Swahili', nativeName: 'Kiswahili' },
+  { code: 'el', name: 'Greek', nativeName: 'Ελληνικά' },
+  { code: 'sv', name: 'Swedish', nativeName: 'Svenska' },
+  { code: 'da', name: 'Danish', nativeName: 'Dansk' },
+  { code: 'no', name: 'Norwegian', nativeName: 'Norsk' },
+  { code: 'fi', name: 'Finnish', nativeName: 'Suomi' },
+  { code: 'he', name: 'Hebrew', nativeName: 'עברית', isRtl: true },
+  { code: 'af', name: 'Afrikaans', nativeName: 'Afrikaans' },
+  { code: 'ne', name: 'Nepali', nativeName: 'नेपाली' },
+  { code: 'si', name: 'Sinhala', nativeName: 'සිංහල' },
 ];
 
 export interface MultilingualTemplate {
@@ -232,6 +250,132 @@ export const MULTILINGUAL_TEMPLATES: Record<string, MultilingualTemplate> = {
     offlineNotice: 'AI 설명은 일시적으로 사용할 수 없습니다. Calcora가 결과를 결정론적으로 계산하고 검증했습니다.',
     directAnswerPhrase: (expr, res) => `계산된 결과는 ${res}입니다. ($${expr} = ${res}$)`,
   },
+  nl: {
+    answerLabel: 'ANTWOORD:',
+    stepPrefix: 'Stap',
+    verifiedBadge: 'Geverifieerd door deterministische engine',
+    offlineNotice: 'De AI-uitleg is tijdelijk niet beschikbaar. Calcora heeft het resultaat deterministisch berekend en geverifieerd.',
+    directAnswerPhrase: (expr, res) => `Het berekende resultaat is ${res}. ($${expr} = ${res}$)`,
+  },
+  pl: {
+    answerLabel: 'ODPOWIEDŹ:',
+    stepPrefix: 'Krok',
+    verifiedBadge: 'Zweryfikowane przez silnik deterministyczny',
+    offlineNotice: 'Wyjaśnienie AI jest tymczasowo niedostępne. Calcora obliczyła i zweryfikowała wynik deterministycznie.',
+    directAnswerPhrase: (expr, res) => `Obliczony wynik to ${res}. ($${expr} = ${res}$)`,
+  },
+  cs: {
+    answerLabel: 'ODPOVĚĎ:',
+    stepPrefix: 'Krok',
+    verifiedBadge: 'Ověřeno deterministickým strojem',
+    offlineNotice: 'Vysvětlení AI je dočasně nedostupné. Calcora výsledek deterministicky vypočítala a ověřila.',
+    directAnswerPhrase: (expr, res) => `Vypočtený výsledek je ${res}. ($${expr} = ${res}$)`,
+  },
+  sk: {
+    answerLabel: 'ODPOVEĎ:',
+    stepPrefix: 'Krok',
+    verifiedBadge: 'Overené deterministickým strojom',
+    offlineNotice: 'Vysvetlenie AI je dočasne nedostupné. Calcora výsledok deterministicky vypočítala a overila.',
+    directAnswerPhrase: (expr, res) => `Vypočítaný výsledok je ${res}. ($${expr} = ${res}$)`,
+  },
+  ro: {
+    answerLabel: 'RĂSPUNS:',
+    stepPrefix: 'Pas',
+    verifiedBadge: 'Verificat de motorul determinist',
+    offlineNotice: 'Explicația AI este temporar indisponibilă. Calcora a calculat și verificat rezultatul în mod determinist.',
+    directAnswerPhrase: (expr, res) => `Rezultatul calculat este ${res}. ($${expr} = ${res}$)`,
+  },
+  hu: {
+    answerLabel: 'VÁLASZ:',
+    stepPrefix: 'Lépés',
+    verifiedBadge: 'Determinisztikus motor által ellenőrizve',
+    offlineNotice: 'Az AI-magyarázat átmenetileg nem elérhető. A Calcora determinisztikusan kiszámította és ellenőrizte az eredményt.',
+    directAnswerPhrase: (expr, res) => `A kiszámított eredmény ${res}. ($${expr} = ${res}$)`,
+  },
+  vi: {
+    answerLabel: 'TRẢ LỜI:',
+    stepPrefix: 'Bước',
+    verifiedBadge: 'Đã xác minh bởi động cơ tất định',
+    offlineNotice: 'Giải thích bằng AI tạm thời không khả dụng. Calcora đã tính và xác minh kết quả một cách tất định.',
+    directAnswerPhrase: (expr, res) => `Kết quả tính được là ${res}. ($${expr} = ${res}$)`,
+  },
+  th: {
+    answerLabel: 'คำตอบ:',
+    stepPrefix: 'ขั้นตอน',
+    verifiedBadge: 'ตรวจสอบโดยกลไกกำหนดผลลัพธ์',
+    offlineNotice: 'คำอธิบายจาก AI ไม่พร้อมใช้งานชั่วคราว Calcora ได้คำนวณและตรวจสอบผลลัพธ์อย่างแน่นอนแล้ว',
+    directAnswerPhrase: (expr, res) => `ผลลัพธ์ที่คำนวณได้คือ ${res} ($${expr} = ${res}$)`,
+  },
+  sw: {
+    answerLabel: 'JIBU:',
+    stepPrefix: 'Hatua',
+    verifiedBadge: 'Imethibitishwa na Injini ya Uhakika',
+    offlineNotice: 'Maelezo ya AI hayapatikani kwa muda. Calcora ilikokotoa na kuthibitisha jibu kwa uhakika.',
+    directAnswerPhrase: (expr, res) => `Jibu lililokokotolewa ni ${res}. ($${expr} = ${res}$)`,
+  },
+  el: {
+    answerLabel: 'ΑΠΑΝΤΗΣΗ:',
+    stepPrefix: 'Βήμα',
+    verifiedBadge: 'Επαληθεύτηκε από τη ντετερμινιστική μηχανή',
+    offlineNotice: 'Η εξήγηση της τεχνητής νοημοσύνης δεν είναι προσωρινά διαθέσιμη. Το Calcora υπολόγισε και επαλήθευσε το αποτέλεσμα ντετερμινιστικά.',
+    directAnswerPhrase: (expr, res) => `Το υπολογισμένο αποτέλεσμα είναι ${res}. ($${expr} = ${res}$)`,
+  },
+  sv: {
+    answerLabel: 'SVAR:',
+    stepPrefix: 'Steg',
+    verifiedBadge: 'Verifierat av deterministisk motor',
+    offlineNotice: 'AI-förklaringen är tillfälligt otillgänglig. Calcora beräknade och verifierade resultatet deterministiskt.',
+    directAnswerPhrase: (expr, res) => `Det beräknade resultatet är ${res}. ($${expr} = ${res}$)`,
+  },
+  da: {
+    answerLabel: 'SVAR:',
+    stepPrefix: 'Trin',
+    verifiedBadge: 'Verificeret af deterministisk motor',
+    offlineNotice: 'AI-forklaringen er midlertidigt utilgængelig. Calcora beregnede og verificerede resultatet deterministisk.',
+    directAnswerPhrase: (expr, res) => `Det beregnede resultat er ${res}. ($${expr} = ${res}$)`,
+  },
+  no: {
+    answerLabel: 'SVAR:',
+    stepPrefix: 'Trinn',
+    verifiedBadge: 'Verifisert av deterministisk motor',
+    offlineNotice: 'AI-forklaringen er midlertidig utilgjengelig. Calcora beregnet og verifiserte resultatet deterministisk.',
+    directAnswerPhrase: (expr, res) => `Det beregnede resultatet er ${res}. ($${expr} = ${res}$)`,
+  },
+  fi: {
+    answerLabel: 'VASTAUS:',
+    stepPrefix: 'Vaihe',
+    verifiedBadge: 'Deterministisen moottorin vahvistama',
+    offlineNotice: 'Tekoälyn selitys ei ole väliaikaisesti saatavilla. Calcora laski ja vahvisti tuloksen deterministisesti.',
+    directAnswerPhrase: (expr, res) => `Laskettu tulos on ${res}. ($${expr} = ${res}$)`,
+  },
+  he: {
+    answerLabel: 'תשובה:',
+    stepPrefix: 'שלב',
+    verifiedBadge: 'אומת על ידי מנוע דטרמיניסטי',
+    offlineNotice: 'ההסבר של הבינה המלאכותית אינו זמין זמנית. Calcora חישבה ואימתה את התוצאה באופן דטרמיניסטי.',
+    directAnswerPhrase: (expr, res) => `התוצאה המחושבת היא ${res}. ($${expr} = ${res}$)`,
+  },
+  af: {
+    answerLabel: 'ANTWOORD:',
+    stepPrefix: 'Stap',
+    verifiedBadge: 'Geverifieer deur deterministiese enjin',
+    offlineNotice: 'Die KI-verduideliking is tydelik nie beskikbaar nie. Calcora het die resultaat deterministies bereken en verifieer.',
+    directAnswerPhrase: (expr, res) => `Die berekende resultaat is ${res}. ($${expr} = ${res}$)`,
+  },
+  ne: {
+    answerLabel: 'उत्तर:',
+    stepPrefix: 'चरण',
+    verifiedBadge: 'निर्धारक इन्जिनद्वारा प्रमाणित',
+    offlineNotice: 'AI स्पष्टीकरण अस्थायी रूपमा उपलब्ध छैन। क्यालकोराले नतिजा निश्चित रूपमा गणना र प्रमाणित गर्यो।',
+    directAnswerPhrase: (expr, res) => `गणना गरिएको नतिजा ${res} हो। ($${expr} = ${res}$)`,
+  },
+  si: {
+    answerLabel: 'පිළිතුර:',
+    stepPrefix: 'පියවර',
+    verifiedBadge: 'නිර්ණායක එන්ජිම මගින් සත්‍යාපිතයි',
+    offlineNotice: 'AI පැහැදිලි කිරීම තාවකාලිකව නොමැත. Calcora ප්‍රතිඵලය නිශ්චිතව ගණනය කර සත්‍යාපනය කළේය.',
+    directAnswerPhrase: (expr, res) => `ගණනය කළ ප්‍රතිඵලය ${res} වේ. ($${expr} = ${res}$)`,
+  },
 };
 
 /**
@@ -239,7 +383,28 @@ export const MULTILINGUAL_TEMPLATES: Record<string, MultilingualTemplate> = {
  */
 export function getLanguageTemplate(langCode: string = 'en'): MultilingualTemplate {
   const norm = (langCode || 'en').toLowerCase().slice(0, 2);
-  return MULTILINGUAL_TEMPLATES[norm] || MULTILINGUAL_TEMPLATES.en;
+  const template = MULTILINGUAL_TEMPLATES[norm] || MULTILINGUAL_TEMPLATES.en;
+  return withEquationSafeDirectAnswer(template);
+}
+
+/**
+ * Renders `<expr> = <res>` only when the expression is not already an equation.
+ *
+ * The per-language `directAnswerPhrase` templates all append `= ${res}`. When the
+ * deterministic engine returns an already-solved equation (e.g. `2x + 5 = 15`) that
+ * produced the false statement `2x + 5 = 15 = 5`. Wrap the phrase once here instead of
+ * patching every language entry.
+ */
+function withEquationSafeDirectAnswer(template: MultilingualTemplate): MultilingualTemplate {
+  const phrase = template.directAnswerPhrase;
+  return {
+    ...template,
+    directAnswerPhrase: (expr, res) => {
+      const value = String(expr ?? '').trim();
+      if (!value.includes('=')) return phrase(expr, res);
+      return phrase(expr, res).replace(`$${expr} = ${res}$`, `$${expr} \\Rightarrow ${res}$`);
+    },
+  };
 }
 
 /**

@@ -13,6 +13,11 @@ import {
   TutorConversationContext,
 } from '../knowledge/mathematics/context';
 import { askAIMathAssistant, AIResponse } from '../ai/client';
+import VerificationBadge from './VerificationBadge';
+import type { PrivacyMode } from '../ai/offlinePolicy';
+import { activeDocumentToContext } from '../services/activeDocument';
+import { resolveSpeechRecognitionLocale } from '../services/speechInput';
+import { DesktopGeminiSettings } from './DesktopGeminiSettings';
 import { loadTutorConversationState, appendTutorMessage, setTutorMode as persistTutorMode, updateTutorProblemContext } from '../services/tutorConversationService';
 import {
   createTutorConversation,
@@ -25,7 +30,9 @@ import {
 } from '../services/mathTutorPersistence';
 import { detectAutomaticCalculation } from '../ai/mathIntelligence';
 import { detectMathAudience } from '../knowledge/mathematics/audienceProfiles';
-import { TUTOR_LANGUAGES, getTutorLanguageCapability } from '../ai/tutorLanguages';
+import { TUTOR_LANGUAGES } from '../ai/tutorLanguages';
+import { fetchLocalModelStatus } from '../ai/localModelClient';
+import type { LocalModelStatus } from '../ai/localModels';
 import { sanitizeSpokenMath, sanitizeQueryText } from '../utils/sanitizer';
 import {
   speakText,
@@ -122,6 +129,8 @@ interface AIAssistantPanelProps {
   currentResult?: string;
   onApplyToCalculator?: (expr: string) => void;
   onAutoCalculate?: (expr: string) => void;
+  initialPrompt?: string;
+  onInitialPromptConsumed?: () => void;
 }
 
 const ALL_MATH_TOPICS: MathTopic[] = [
@@ -219,6 +228,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   currentResult,
   onApplyToCalculator,
   onAutoCalculate,
+  initialPrompt,
+  onInitialPromptConsumed,
 }) => {
   // Load saved preferences
   const initialSettings = loadTutorSettings();
@@ -235,12 +246,69 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   );
   const [socraticMode, setSocraticMode] = useState<boolean>(initialSettings.socraticMode ?? true);
   const [examMode, setExamMode] = useState<boolean>(initialSettings.examMode ?? false);
-  const [tutorLanguage, setTutorLanguage] = useState<string>(() => localStorage.getItem('calcora_tutor_language') || 'en');
+  const [tutorLanguage, setTutorLanguage] = useState<string>(() => localStorage.getItem('calcora_tutor_language') || 'auto');
+  const [privacyMode, setPrivacyMode] = useState<PrivacyMode>(() => {
+    try {
+      return localStorage.getItem('calcora_tutor_privacy_mode') === 'cloud' ? 'cloud' : 'offline';
+    } catch {
+      return 'offline';
+    }
+  });
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus | null>(null);
+  const [localModelStatusError, setLocalModelStatusError] = useState<string | null>(null);
+  const [selectedLocalModelId, setSelectedLocalModelId] = useState(() => {
+    try { return localStorage.getItem('calcora_local_model_id_v1') || ''; } catch { return ''; }
+  });
+  const attachedDocument = activeDocumentToContext();
+  const setTutorPrivacyMode = (mode: PrivacyMode) => {
+    setPrivacyMode(mode);
+    try {
+      localStorage.setItem('calcora_tutor_privacy_mode', mode);
+    } catch {
+      // Privacy mode still applies to this session if storage is unavailable.
+    }
+  };
+  const selectLocalModel = (modelId: string) => {
+    setSelectedLocalModelId(modelId);
+    try {
+      if (modelId) localStorage.setItem('calcora_local_model_id_v1', modelId);
+      else localStorage.removeItem('calcora_local_model_id_v1');
+    } catch {
+      // Model choice remains active for this view if local storage is unavailable.
+    }
+    if (modelId) setTutorPrivacyMode('offline');
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchLocalModelStatus(controller.signal).then((status) => {
+      if (controller.signal.aborted) return;
+      setLocalModelStatus(status);
+      setLocalModelStatusError(null);
+      if (selectedLocalModelId && !status.models.some((model) => model.id === selectedLocalModelId)) {
+        setSelectedLocalModelId('');
+        try { localStorage.removeItem('calcora_local_model_id_v1'); } catch { /* session fallback is still available */ }
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setLocalModelStatusError('Local model status is unavailable. The deterministic Tutor remains available.');
+      }
+    });
+    return () => controller.abort();
+  }, []);
 
   // Messages state
   const [messages, setMessages] = useState<AIMessage[]>(() => loadTutorConversationState().messages);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!initialPrompt) return;
+    setInputPrompt(initialPrompt);
+    setTutorLanguage('auto');
+    try { localStorage.setItem('calcora_tutor_language', 'auto'); } catch { /* keep the selected language for this view */ }
+    onInitialPromptConsumed?.();
+  }, [initialPrompt, onInitialPromptConsumed]);
 
   // Progressive Hint State
   const [hintLevel, setHintLevel] = useState<HintLevel>(1);
@@ -408,7 +476,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     let remoteRag: Awaited<ReturnType<typeof retrieveMathRAG>> = null;
 
     try {
-      await syncLocalMathCorpus(
+      if (privacyMode === 'cloud' && !attachedDocument) await syncLocalMathCorpus(
         Array.from(mathematicsKnowledgeIndex.values()).map((item) =>
           knowledgeToSupabaseRecord(item, MATHEMATICS_KNOWLEDGE_VERSION) as unknown as Record<string, unknown>
         ),
@@ -420,7 +488,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       console.warn('Math corpus embedding sync unavailable; continuing with existing corpus:', error);
     }
     try {
-      remoteRag = await retrieveMathRAG([sanitized, activeProblem, effectiveTopic].filter(Boolean).join(' '), 5);
+      if (privacyMode === 'cloud' && !attachedDocument) {
+        remoteRag = await retrieveMathRAG([sanitized, activeProblem, effectiveTopic].filter(Boolean).join(' '), 5);
+      }
     } catch (error) {
       console.warn('Supabase math RAG unavailable; using local knowledge index:', error);
     }
@@ -487,10 +557,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const contextState = updateTutorProblemContext(loadTutorConversationState(), { rawProblem: sanitized, topic: effectiveTopic, difficulty });
     void contextState;
 
-    // Persist the tutor session when Supabase auth is available. The local
-    // Tutor state remains the immediate fallback, so the feature never blocks
-    // calculation/tutoring when cloud persistence is unavailable.
-    void (async () => {
+    // Only persist tutor content when the learner explicitly enabled cloud mode.
+    // A document-backed question is always kept local, even if cloud mode is enabled.
+    if (privacyMode === 'cloud' && !attachedDocument) void (async () => {
       try {
         if (!tutorConversationIdRef.current) {
           tutorConversationIdRef.current = await createTutorConversation(
@@ -540,6 +609,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           audienceProfile,
           language: tutorLanguage,
           responseProfile: requestOverrides.responseProfile,
+          privacyMode: attachedDocument ? 'offline' : privacyMode,
+          localModelId: selectedLocalModelId || undefined,
         }
       );
 
@@ -564,13 +635,16 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         steps: response.steps,
         isVerified: response.isVerified,
         verificationNote: response.verificationNote,
+        verification: response.verification,
+        responseSource: response.responseSource,
+        providerMessage: response.providerMessage,
         timestamp: Date.now(),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
       appendTutorMessage(loadTutorConversationState(), assistantMsg);
 
-      void (async () => {
+      if (privacyMode === 'cloud' && !attachedDocument) void (async () => {
         try {
           if (tutorConversationIdRef.current) {
             await saveTutorMessage({
@@ -660,10 +734,12 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
     try {
       const recognition = new SpeechRecognitionClass();
-      recognition.lang = tutorLanguage === 'auto' ? 'en-US' : getTutorLanguageCapability(tutorLanguage).mathLocale;
+      recognition.lang = resolveSpeechRecognitionLocale(
+        tutorLanguage,
+        typeof navigator === 'undefined' ? 'en-US' : navigator.language,
+      );
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -709,7 +785,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       setSpeechStatus(null);
       setSpeechError(`Failed to initialize microphone: ${err.message || 'Error'}`);
     }
-  }, [isListening]);
+  }, [isListening, tutorLanguage]);
 
   // Text-to-Speech: Read full assistant explanation aloud
   const handleSpeakFullExplanation = useCallback(
@@ -1153,7 +1229,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
 
         {/* Mode Selector & Pedagogy Controls Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-purple-500/20">
+        <div className="flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-3 pt-3 border-t border-purple-500/20">
           {/* 1. TUTOR MODE SWITCH: Assistant vs Tutor vs Solver Review */}
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0">
             <button
@@ -1203,6 +1279,49 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               {TUTOR_LANGUAGES.map(language => <option key={language.code} value={language.code} className="bg-slate-900 text-white">{language.nativeName} — {language.name}</option>)}
             </select>
           </label>
+          <label className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <span className="text-[11px] text-slate-400 font-medium">AI privacy:</span>
+            <select
+              id="tutor-privacy-mode"
+              value={attachedDocument ? 'offline' : privacyMode}
+              onChange={(event) => setTutorPrivacyMode(event.target.value as PrivacyMode)}
+              className="bg-transparent text-emerald-300 font-semibold focus:outline-none cursor-pointer text-xs"
+              title="Local only avoids Gemini and cloud Tutor storage. PDF questions always stay local."
+            >
+              <option value="offline" className="bg-slate-900 text-white">Local only</option>
+              <option value="cloud" className="bg-slate-900 text-white" disabled={Boolean(attachedDocument)}>Allow cloud AI + sync</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+            <span className="text-[11px] text-emerald-300 font-medium">Local model:</span>
+            <select
+              id="tutor-local-model-select"
+              value={selectedLocalModelId}
+              onChange={(event) => selectLocalModel(event.target.value)}
+              aria-describedby="tutor-local-model-status"
+              className="bg-transparent text-emerald-200 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400 cursor-pointer text-xs"
+              title="Choose an optional locally installed GGUF model. The deterministic Tutor remains authoritative."
+            >
+              <option value="" className="bg-slate-900 text-white">Deterministic Tutor</option>
+              {(localModelStatus?.models ?? []).map((model) => (
+                <option key={model.id} value={model.id} className="bg-slate-900 text-white">
+                  {model.fileName} · {model.role === 'coding' ? 'coding' : 'general'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p id="tutor-local-model-status" role="status" aria-live="polite" className="basis-full text-[10px] leading-4 text-slate-400">
+            {localModelStatusError
+              || (!localModelStatus
+                ? 'Checking for local GGUF models…'
+                : localModelStatus.diagnostic
+                ? localModelStatus.diagnostic
+                : selectedLocalModelId && (attachedDocument || privacyMode !== 'cloud')
+                  ? 'Local explanation selected; mathematical results remain deterministic.'
+                  : selectedLocalModelId
+                    ? 'Model selected; it is used only in Local only mode.'
+                    : 'Local inference is optional. The deterministic Tutor works without a model or API key.')}
+          </p>
           <label className="flex items-center gap-2 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
             <span className="text-[11px] text-slate-400 font-medium">Teaching mode:</span>
             <select
@@ -1816,6 +1935,12 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
       )}
 
+      <div id="tutor-privacy-status" role="status" className="flex items-center gap-2 flex-wrap text-[11px] text-slate-400">
+        <span className="font-semibold text-emerald-400">{attachedDocument ? 'Document stays local' : privacyMode === 'offline' ? 'Local only' : 'Cloud use allowed'}</span>
+        <span>{attachedDocument ? `· ${attachedDocument.fileName} (${attachedDocument.pageCount} pages) is grounded locally; no Gemini request or cloud persistence is used.` : privacyMode === 'offline' ? '· Tutor requests and conversation stay on this device.' : '· Prompts may be sent to Gemini and a signed-in Supabase account when those services are configured.'}</span>
+      </div>
+      <DesktopGeminiSettings />
+
       {/* Main Conversation Flow */}
       <div className="flex-1 min-h-[260px] max-h-[480px] overflow-y-auto p-4 rounded-2xl bg-slate-950/60 dark:bg-slate-950/60 light:bg-white/80 border border-slate-800 dark:border-slate-800 light:border-slate-200 flex flex-col gap-4 shadow-inner">
         {messages.map((msg) => {
@@ -2027,23 +2152,32 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                       )}
                     </div>
 
-                    {/* Deterministic Verification Handshake Badge */}
-                    {msg.isVerified !== undefined && (
-                      <div
-                        className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                          msg.isVerified
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                        }`}
+                    {msg.responseSource && (
+                      <span
+                        data-response-source={msg.responseSource}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-300 border border-slate-700/60"
                       >
-                        {msg.isVerified ? (
-                          <CheckCircle className="w-3 h-3" />
-                        ) : (
-                          <AlertCircle className="w-3 h-3" />
-                        )}
-                        <span>{msg.verificationNote || 'Handshake complete'}</span>
-                      </div>
+                        {msg.responseSource === 'gemini'
+                          ? 'Gemini explanation'
+                          : msg.responseSource === 'local-model'
+                            ? 'Local model explanation · not verified'
+                            : msg.responseSource === 'document-grounded'
+                              ? 'Grounded in your document'
+                              : msg.responseSource === 'document-insufficient-evidence'
+                                ? 'Document evidence insufficient'
+                                : 'Local Calcora Tutor'}
+                      </span>
                     )}
+                    {msg.providerMessage && <p role="status" className="text-[10px] leading-4 text-amber-600 dark:text-amber-300">{msg.providerMessage}</p>}
+
+                    {/* Canonical verification state. Derived from real application
+                        state, never hardcoded, and never inferred from the presence
+                        of a number. A mathematical answer always shows a state. */}
+                    <VerificationBadge
+                      verification={msg.verification}
+                      isVerified={msg.isVerified}
+                      verificationNote={msg.verificationNote}
+                    />
                   </div>
                 )}
               </div>

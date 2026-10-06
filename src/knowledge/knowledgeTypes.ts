@@ -6,6 +6,12 @@
 
 export const MATHEMATICS_KNOWLEDGE_VERSION = '2.0.0';
 
+/**
+ * Evidence-based reliability statement for a knowledge item.
+ * See `src/knowledge/knowledgeVerification.ts` for how each value is derived.
+ */
+export type KnowledgeVerificationStatus = 'VERIFIED' | 'UNVERIFIED' | 'REVIEW_REQUIRED';
+
 export type MathKnowledgeLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
 export interface MathExample {
@@ -57,6 +63,15 @@ export interface MathKnowledgeItem {
   aliases: string[];
   latexRepresentation: string;
   sourceMetadata: MathSourceMetadata;
+  /**
+   * Evidence-based reliability statement for this item, computed by
+   * `auditKnowledgeCorpus` from the repository's own worked examples. It is never
+   * hand-asserted and it is never uniformly VERIFIED.
+   *
+   * This is a statement about the *prose*, not about the mathematics: no knowledge
+   * item is ever the authority for a numerical result, whatever its status.
+   */
+  verificationStatus?: KnowledgeVerificationStatus;
 }
 
 export type MathematicalIntent =

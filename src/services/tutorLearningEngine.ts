@@ -1,13 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import { timingSafeEqual } from 'node:crypto';
+import { isAuthorizationTokenValid } from './requestSecurity';
 
 export interface TutorEvaluationCase { prompt: string; expectedBehavior: string; deterministicAuthority: boolean; sourceItemId?: string | null; }
 
 export function isLearningEvaluationAuthorized(providedToken: string | undefined, expectedToken: string | undefined): boolean {
-  if (!providedToken || !expectedToken) return false;
-  const provided = Buffer.from(providedToken);
-  const expected = Buffer.from(expectedToken);
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
+  return isAuthorizationTokenValid(providedToken, expectedToken);
 }
 
 export function buildEvaluationCases(items: Array<{ id?: string; title: string; summary: string; kind: string }>, limit = 20): TutorEvaluationCase[] {

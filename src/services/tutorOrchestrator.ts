@@ -43,6 +43,28 @@ import {
   formatTutorContinuityContext,
 } from './tutorConversationService';
 import { parseGeminiJsonResponse, classifyGeminiRuntimeFailure, type GeminiRuntimeFailureKind } from './geminiRuntime';
+import {
+  verifyCalculation,
+  verifyEquation,
+  verifyUnsupported,
+} from '../verification/independentVerifier';
+import {
+  classifyMisconception,
+  createMisconceptionState,
+  selectTargetedHint,
+  type MisconceptionState,
+} from './misconceptionModel';
+import {
+  unavailable,
+  type VerificationOutcome,
+} from '../verification/verificationStates';
+import {
+  selectRelevantChunks,
+  formatDocumentContext,
+  describeDocumentProvenance,
+  MAX_DOCUMENT_CONTEXT_CHARS,
+  type DocumentContext,
+} from './documentContext';
 
 export interface TutorOrchestrationOptions {
   prompt: string;
@@ -54,12 +76,16 @@ export interface TutorOrchestrationOptions {
   mode?: FunctionalTutorMode;
   problemContext?: Partial<MathProblemContext>;
   learningLevel?: Partial<UserLearningLevel>;
+  /** The learner's submitted answer or working, used by check-work / review modes. */
+  userAnswer?: string;
   language?: string;
   currentExpression?: string;
   currentResult?: string;
   conversation?: Array<{ role: 'user' | 'assistant'; content: string }>;
   groundingContext?: string;
   offlineOnly?: boolean;
+  /** Page-aware text extracted from a user document (e.g. a PDF). Untrusted input. */
+  documentContext?: DocumentContext | null;
 }
 
 export type GeminiAvailabilityReason = 'api-key-available' | 'missing-api-key' | 'placeholder-api-key' | 'offline-only';
@@ -90,12 +116,22 @@ export interface TutorOrchestrationResult {
   mode: FunctionalTutorMode;
   deterministicAuthority: {
     isAvailable: boolean;
+    /**
+     * True only when `verification.state === 'VERIFIED'`, i.e. a second, independent
+     * code path re-derived the same value. This is deliberately NOT an alias for
+     * `isAvailable`.
+     */
     isVerified: boolean;
     authoritativeResult: string | null;
     exactResult?: string;
     derivationSteps: string[];
     confidence: number;
     method: string;
+    /**
+     * The canonical four-state verification outcome. This is the field the UI must
+     * render. `isVerified` above is a derived convenience for older call sites.
+     */
+    verification: VerificationOutcome;
   };
   pedagogy: {
     topic: string;
@@ -108,10 +144,17 @@ export interface TutorOrchestrationResult {
   groundingSources: string[];
   isOfflineFallback: boolean;
   discrepancyDetected: boolean;
+  /** Present when a hint classified the learner's submitted work. */
+  misconception?: MisconceptionState | null;
   executionTimeMs: number;
   error?: string;
   fallbackStatus?: TutorFallbackStatus;
-  responseSource?: 'gemini' | 'deterministic-fallback' | 'deterministic-tutor-unavailable' | 'gemini-unavailable';
+  responseSource?: 'gemini' | 'local-model' | 'deterministic-fallback' | 'deterministic-tutor-unavailable' | 'gemini-unavailable'
+    | 'document-grounded' | 'document-insufficient-evidence';
+  /** Provenance of the document evidence used, for inspectability. */
+  documentProvenance?: string;
+  /** Pages actually cited in the answer. */
+  documentPagesUsed?: number[];
   geminiFailureKind?: GeminiRuntimeFailureKind;
 }
 
@@ -129,6 +172,507 @@ const MATH_TOPICS = new Set<MathTopic>([
   'Number Theory',
 ]);
 
+/**
+ * Leading natural-language filler that can precede the equation itself. Restricted to
+ * unambiguous words so a legitimate variable-only equation such as "x + 5 = 15" is never
+ * truncated.
+ */
+const EQUATION_FILLER_WORDS = new Set([
+  'for', 'in', 'if', 'the', 'value', 'of', 'unknown', 'variable', 'solve', 'find',
+  'when', 'where', 'given', 'that', 'let', 'x', 'equals', 'equal', 'answer', 'root',
+]);
+
+/**
+ * Recovers the equation-shaped substring from natural-language phrasing such as
+ * "solve for x in 2x + 5 = 15" or "find the value of x where 3x + 2 = 11".
+ * Returns null when the text contains no equality to solve.
+ */
+function extractEquationCandidate(text: string): string | null {
+  if (!text.includes('=')) return null;
+  const trimmed = text.trim();
+  if (toolSolveEquation({ equation: trimmed }).success) return trimmed;
+
+  // Drop leading filler words, then retry on the remainder.
+  const tokens = trimmed.split(/\s+/);
+  while (tokens.length && EQUATION_FILLER_WORDS.has(tokens[0].toLowerCase())) {
+    tokens.shift();
+  }
+  const withoutFiller = tokens.join(' ').trim();
+  if (withoutFiller && withoutFiller !== trimmed && toolSolveEquation({ equation: withoutFiller }).success) {
+    return withoutFiller;
+  }
+
+  // Last resort: the maximal run of mathematical characters containing an "=".
+  // This is what recovers an equation embedded in non-Latin phrasing, for example
+  // "میں 2x + 5 = 15 سمجھاؤ", where the surrounding script is not part of the equation.
+  const mathRun = trimmed.match(/[A-Za-z0-9_.\s()+\-*/^$]*=[A-Za-z0-9_.\s()+\-*/^$]*/);
+  const run = mathRun ? mathRun[0].trim() : null;
+  if (run && run !== trimmed && run.includes('=') && toolSolveEquation({ equation: run }).success) {
+    return run;
+  }
+
+  return null;
+}
+
+/**
+ * Sentences from the document that overlap the question, used to ground an answer.
+ * The text is treated strictly as reference data: it is quoted back to the learner
+ * with its page number and is never executed or obeyed.
+ */
+function extractSupportingSentences(
+  chunks: ReturnType<typeof selectRelevantChunks>,
+  question: string,
+  limit = 4,
+): Array<{ pageNumber: number; sentence: string }> {
+  const questionTokens = new Set(
+    question
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}+-]+/u)
+      .filter((token) => token.length > 2),
+  );
+
+  const scored: Array<{ pageNumber: number; sentence: string; score: number }> = [];
+  for (const chunk of chunks) {
+    for (const raw of chunk.text.split(/(?<=[.!?؟۔])\s+|\n+/)) {
+      const sentence = raw.trim();
+      if (sentence.length < 12) continue;
+      const tokens = sentence.toLowerCase().split(/[^\p{L}\p{N}+-]+/u);
+      let score = 0;
+      for (const token of new Set(tokens)) {
+        if (questionTokens.has(token)) score += 1;
+      }
+      if (score > 0) scored.push({ pageNumber: chunk.pageNumber, sentence, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
+  return scored.slice(0, limit).map(({ pageNumber, sentence }) => ({ pageNumber, sentence }));
+}
+
+interface DocumentGroundedAnswer {
+  answer: string;
+  steps: string[];
+  formula: string | null;
+  pagesUsed: number[];
+  grounded: boolean;
+  provenance: string;
+}
+
+/**
+ * Builds an answer from the user's extracted document.
+ *
+ * When the document does not contain the evidence, that is stated plainly instead of
+ * being filled in from general knowledge, so absence is never presented as fact.
+ */
+function buildDocumentGroundedResponse(
+  prompt: string,
+  document: DocumentContext,
+  language: string,
+): DocumentGroundedAnswer {
+  const provenance = describeDocumentProvenance(document);
+  const isUrdu = /^ur($|[-_])/i.test(language) || /[\u0600-\u06FF]/.test(prompt);
+
+  if (!document.hasText) {
+    const answer = isUrdu
+      ? `میں نے دستاویز "${document.fileName}" کا متن نکالا مگر اس میں قابلِ انتخاب متن نہیں ملا۔ یہ ایک اسکین شدہ دستاویز لگتی ہے، جس کے لیے OCR درکار ہے۔ اس لیے میں اس کے بارے میں کوئی حد یا معنی نہیں بتا سکتا۔`
+      : `I could not extract any selectable text from "${document.fileName}". It appears to be a scanned document, which requires OCR. I therefore cannot say anything reliable about its contents.`;
+    return {
+      answer,
+      steps: [
+        isUrdu ? 'دستاویز کا متن نکالا گیا مگر خالی پایا گیا۔' : 'Document text extraction returned no content.',
+        isUrdu ? 'اسکین شدہ دستاویز کے لیے OCR درکار ہے۔' : 'OCR would be required for a scanned document.',
+        isUrdu ? 'کوئی مواد نہیں بنایا گیا۔' : 'No content was invented to fill the gap.',
+      ],
+      formula: null,
+      pagesUsed: [],
+      grounded: false,
+      provenance,
+    };
+  }
+
+  const chunks = selectRelevantChunks(document, prompt, MAX_DOCUMENT_CONTEXT_CHARS);
+
+  if (!chunks.length) {
+    const pages = document.pageCount;
+    const answer = isUrdu
+      ? `دستاویز "${document.fileName}" کے ${pages} صفحات میں آپ کے سوال کا جواب موجود نہیں ہے۔ دستاویز میں کوئی ایسا متن نہیں ملا جو اس سوال سے مطابقت رکھتا ہو۔`
+      : `The document "${document.fileName}" does not contain enough information to answer that. Its ${pages} page(s) contain no passage that matches this question.`;
+    return {
+      answer,
+      steps: [
+        isUrdu ? `دستاویز کے ${pages} صفحات تلاش کیے گئے۔` : `Searched ${pages} page(s) of the document.`,
+        isUrdu ? 'سوال سے مطابقت رکھنے والا کوئی حصہ نہیں ملا۔' : 'No matching passage was found.',
+        isUrdu ? 'معلومات کی کمی سے کوئی جواب نہیں گھڈپایا گیا۔' : 'Nothing was invented to cover the gap.',
+      ],
+      formula: null,
+      pagesUsed: [],
+      grounded: false,
+      provenance,
+    };
+  }
+
+  const evidence = extractSupportingSentences(chunks, prompt);
+  const pagesUsed = [...new Set(evidence.map((item) => item.pageNumber))].sort((a, b) => a - b);
+  const contextText = formatDocumentContext(chunks, document, { maxChars: MAX_DOCUMENT_CONTEXT_CHARS });
+
+  if (!evidence.length) {
+    const pageList = [...new Set(chunks.map((c) => c.pageNumber))].sort((a, b) => a - b);
+    const answer = isUrdu
+      ? `دستاویز کے صفحہ ${pageList.join('، ')} پر اس سوال کا براہِ راست جواب نہیں ملا۔ دستاویز میں اس موضوع سے متعلق material موجود ہے مگر اس سوال کا جواب براہِ راست نہیں دیا گیا۔`
+      : `The document does not state a direct answer to that question. It covers the topic on page ${pageList.join(', ')}, but the specific answer you asked for is not given.`;
+    return {
+      answer: `${answer}\n\n${isUrdu ? 'متعلقہ صفحہ' : 'Related page'}: ${pageList.join(', ')}`,
+      steps: [
+        isUrdu ? `دستاویز کے صفحات ${pageList.join('، ')} تلاش کیے گئے۔` : `Retrieved pages ${pageList.join(', ')} of the document.`,
+        isUrdu ? 'براہِ راست جواب دستاویز میں موجود نہیں۔' : 'No direct answer is present in the retrieved text.',
+      ],
+      formula: null,
+      pagesUsed,
+      grounded: false,
+      provenance,
+    };
+  }
+
+  const citations = evidence.map((item) => `- "${item.sentence}" (page ${item.pageNumber})`).join('\n');
+  const answer = isUrdu
+    ? `دستاویز "${document.fileName}" کے مطابق، سوال کا جواب یہ ہے:\n\n${citations}\n\nیہ تمام جواب براہِ راست دستاویز کے متن سے لیا گیا ہے (صفحہ ${pagesUsed.join('، ')})۔`
+    : `Based on "${document.fileName}", the answer is:\n\n${citations}\n\nEvery statement above is quoted directly from the document (page ${pagesUsed.join(', ')}).`;
+
+  return {
+    answer,
+    steps: [
+      isUrdu ? `دستاویز کے ${document.pageCount} صفحات میں سوال کے لیے متن تلاش کیا گیا۔` : `Searched ${document.pageCount} page(s) for text matching the question.`,
+      isUrdu ? `صفحہ ${pagesUsed.join('، ')} سے ${evidence.length} جملے ملے۔` : `Found ${evidence.length} supporting passage(s) on page ${pagesUsed.join(', ')}.`,
+      isUrdu ? 'جواب براہِ راست دستاویز کے متن پر مبنی ہے۔' : 'The answer quotes the document rather than adding outside claims.',
+    ],
+    formula: null,
+    pagesUsed,
+    grounded: true,
+    provenance,
+  };
+}
+
+/**
+ * Localized scaffolding for the interaction modes (hint / check-work / review).
+ * Keeps these modes in the user's language instead of falling back to English.
+ */
+function modePhrases(language: string) {
+  const isUrdu = /^ur($|[-_])/i.test(language);
+  return isUrdu
+    ? {
+        askForProblem:
+          'مجھے hint دینے کے لیے مسئله درکار ہے۔ براہِ کرم مساوات یا جو مسئلہ آپ کو حل کرنا ہے یہاں لکھیں، یا کیلکولیٹر میں_expression درج کریں۔',
+        start: 'یہاں سے آغاز کریں:',
+        nextStep: 'اگلا قدم:',
+        completeSolution: 'مکمل حل:',
+        firstError: 'پہلا غلط قدم:',
+        firstIncorrect: 'پہلا غلط قدم:',
+        correctionNote: 'درست طریقہ اوپر تصدیق شدہ مراحل میں دکھایا گیا ہے۔',
+        correct: 'بالکل درست! یہی حل ہے۔',
+        wrong: 'یہ درست نہیں ہے۔',
+        notComplete: 'یہ مکمل مساوات نہیں ہے۔',
+        pasteWork: 'اپنا کام یہاں بھیجیں تاکہ میں پہلا غلط قدم بتا سکوں۔',
+        result: 'تصدیق شدہ نتیجہ',
+      }
+    : {
+        askForProblem:
+          'I need the problem before I can give you a useful hint. Please send the equation or the question you are working on, or type an expression in the calculator.',
+        start: 'Start here:',
+        nextStep: 'Next step:',
+        completeSolution: 'Complete solution:',
+        firstError: 'The first step that goes wrong is:',
+        firstIncorrect: 'First incorrect step:',
+        correctionNote: 'The deterministic derivation above shows the correction.',
+        correct: 'Correct — that is the right answer.',
+        wrong: 'That is not correct.',
+        notComplete: 'That is not a complete equation, so I cannot check it yet.',
+        pasteWork: 'Send the working you have done and I will point at the first step that goes wrong.',
+        result: 'Verified result',
+      };
+}
+
+/** Normalises a learner's typed answer for comparison against a verified value. */
+function normalizeLearnerAnswer(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/^[^0-9a-z+\-./^*=]+|[^0-9a-z+\-./^*=)]+$/gi, '')
+    .replace(/\s+/g, '')
+    .replace(/=+$/, '')
+    .toLowerCase();
+}
+
+/** True when the text looks like an unfinished or unusable mathematical expression. */
+function looksIncomplete(text: string): boolean {
+  const value = text.trim();
+  if (!value) return true;
+  if (/[+\-*/^]$/.test(value)) return true;
+  if (/=$/.test(value)) return true;
+  const opens = (value.match(/\(/g) ?? []).length;
+  const closes = (value.match(/\)/g) ?? []).length;
+  if (opens !== closes) return true;
+  if (!/[0-9a-z]/i.test(value)) return true;
+  return false;
+}
+
+/** Returns the first submitted equation that disagrees with the verified solution. */
+function findFirstIncorrectEquationStep(
+  submittedWork: string,
+  activeProblem: string,
+  expectedResult: string,
+): string | null {
+  const segments = String(submittedWork ?? '')
+    .split(/,|;|\bso\b|\bthus\b|\bthen\b|\bi get\b|\bwhich gives\b|،|और|لےکن/i)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const original = (activeProblem || recoverProblemFromWorking(submittedWork) || '').replace(/\s+/g, '').toLowerCase();
+
+  for (const segment of segments) {
+    const candidate = extractEquationCandidate(segment);
+    if (!candidate || !/[a-z]/i.test(candidate)) continue;
+    if (original && candidate.replace(/\s+/g, '').toLowerCase() === original) continue;
+
+    const result = toolSolveEquation({ equation: candidate });
+    if (result.success && normalizeLearnerAnswer(result.result) !== normalizeLearnerAnswer(expectedResult)) {
+      return segment;
+    }
+  }
+  return null;
+}
+
+/**
+ * Produces a progressive hint for the active problem.
+ *
+ * The hint is derived from the deterministic derivation steps, so it is always
+ * mathematically correct. The final answer is never stated, because a hint-only
+ * request must leave the learner something to do.
+ */
+function buildHintOfflineResponse(
+  prompt: string,
+  problemContext: Partial<MathProblemContext> | undefined,
+  deterministicResult: MathToolResult | null,
+  hintLevel: number,
+  language: string,
+  userAnswer?: string,
+  topic?: string,
+): { answer: string; steps: string[]; formula: string | null; misconception: MisconceptionState | null } {
+  const phrases = modePhrases(language);
+  const level = Math.min(5, Math.max(1, Math.round(hintLevel) || 1));
+
+  const steps: string[] =
+    (deterministicResult?.derivationSteps?.length ? deterministicResult.derivationSteps : null) ??
+    (problemContext?.derivationSteps?.length ? problemContext.derivationSteps : null) ??
+    [];
+
+  const activeProblem = problemContext?.canonicalExpression || problemContext?.rawProblem || '';
+  const hasProblem = Boolean(activeProblem) || Boolean(deterministicResult?.success);
+
+  // Misconception-aware hint selection.
+  //
+  // When the learner has actually submitted work and a verified expected answer
+  // exists, classify the observable error and address *that*, instead of returning
+  // the nth rung of a positional ladder. The targeted guidance is prepended to the
+  // ordinary positional hint so existing behaviour is preserved when there is no
+  // submitted work to analyse.
+  let misconception: MisconceptionState | null = null;
+  let targetedPrefix = '';
+  const submitted = (userAnswer ?? '').trim();
+  const expected = deterministicResult?.success ? String(deterministicResult.result) : null;
+  if (submitted && expected && (activeProblem || prompt)) {
+    const problem = activeProblem || deterministicResult?.expression || prompt;
+    const evidence = classifyMisconception({ problem, learnerAnswer: submitted, expected });
+    // A submission that matches the verified result is not a misconception, so no
+    // hint targeting is generated for it. The ordinary positional hint still runs.
+    if (evidence.matchedRule !== 'correct') {
+      misconception = createMisconceptionState(topic || problemContext?.topic || 'General', evidence);
+      const hint = selectTargetedHint({
+        state: misconception,
+        previousRung: level - 1,
+        // Rung 5 is the only level permitted to reveal the result, and only the
+        // verified deterministic value is ever revealed.
+        mayRevealAnswer: level === 5,
+      });
+      targetedPrefix = [
+        `Observed pattern — ${hint.title}.`,
+        hint.body,
+        hint.followUp.prompt,
+      ].join('\n\n');
+    }
+  }
+
+  if (!hasProblem) {
+    return {
+      answer: phrases.askForProblem,
+      steps: [phrases.askForProblem],
+      formula: null,
+      misconception: null,
+    };
+  }
+
+  if (level === 5) {
+    const verifiedAnswer = deterministicResult?.success
+      ? deterministicResult.result
+      : problemContext?.authoritativeResult;
+if (!verifiedAnswer) {
+      return {
+        answer: `${phrases.nextStep} I do not have a verified solution to reveal. Send the full problem so I can check it with the deterministic math engine.`,
+        steps: [],
+        formula: deterministicResult?.formula || null,
+        misconception,
+      };
+    }
+    const solutionSteps = steps.filter((step) => step.trim());
+    const renderedSteps = solutionSteps.map((step, index) => `${index + 1}. ${step}`).join('\n');
+    const answer = `${phrases.completeSolution}\n${renderedSteps}${renderedSteps ? '\n' : ''}${verifiedAnswer}`;
+    return { answer, steps: solutionSteps, formula: deterministicResult?.formula || null, misconception };
+  }
+
+  // Levels 1–4 are hints only; the final derivation line is reserved for level 5.
+  const revealable = steps.length > 1 ? steps.slice(0, -1) : [];
+  const chosen = revealable[Math.min(level - 1, Math.max(revealable.length - 1, 0))] ?? null;
+
+  const problem = activeProblem || deterministicResult?.expression || prompt;
+  // The targeted, evidence-based guidance leads, because it addresses the actual
+  // error rather than the nth rung of a ladder. The positional hint follows as
+  // supporting detail.
+  const lines: string[] = [problem ? `${phrases.start} $${problem}$` : phrases.start];
+
+  if (targetedPrefix) {
+    lines.push('', targetedPrefix);
+  }
+
+  if (chosen) {
+    lines.push('', phrases.nextStep, chosen);
+  } else {
+    lines.push('', phrases.nextStep, 'Identify what the question is actually asking you to find, then choose the inverse operation that undoes the last step.');
+  }
+
+  if (level >= 3 && revealable.length > 1) {
+    const extra = revealable.slice(level).filter(Boolean);
+    if (extra.length) {
+      lines.push('', phrases.firstError, `Avoid jumping ahead of: ${extra[0]}`);
+    }
+  }
+
+  return {
+    answer: lines.join('\n'),
+    steps: chosen ? [chosen] : [],
+    formula: deterministicResult?.formula || null,
+    misconception,
+  };
+}
+
+/**
+ * Checks a learner's submitted answer or working against the deterministic solution.
+ *
+ * Distinguishes three cases that the old placeholder collapsed into one:
+ * an incomplete expression, a wrong answer, and correct work.
+ */
+function buildCheckWorkOfflineResponse(
+  prompt: string,
+  options: {
+    problemContext?: Partial<MathProblemContext>;
+    deterministicResult: MathToolResult | null;
+    userAnswer?: string;
+    language: string;
+  },
+): { answer: string; steps: string[]; formula: string | null; verification: 'correct' | 'incorrect' | 'incomplete' | 'unverified' } {
+  const phrases = modePhrases(options.language);
+  const submitted = (options.userAnswer ?? prompt).trim();
+  const deterministic = options.deterministicResult;
+
+  const activeProblem = options.problemContext?.canonicalExpression || options.problemContext?.rawProblem || '';
+  const expected =
+    deterministic?.success && deterministic.result
+      ? deterministic.result
+      : options.problemContext?.authoritativeResult;
+
+  // Case 1: nothing usable was submitted.
+  if (!submitted) {
+    return { answer: phrases.pasteWork, steps: [], formula: null, verification: 'incomplete' };
+  }
+
+  // Case 2: the submission is not a usable mathematical expression.
+  if (looksIncomplete(submitted)) {
+    return { answer: phrases.notComplete, steps: [], formula: null, verification: 'incomplete' };
+  }
+
+  // Case 3: there is no verified answer to compare against, so do not claim one.
+  if (!expected) {
+    return {
+      answer: `${phrases.pasteWork}\n\nNo deterministic solution is available for this yet, so I cannot confirm the value. Send the full problem and I will check it with the math engine.`,
+      steps: [],
+      formula: null,
+      verification: 'unverified',
+    };
+  }
+
+  const normalizedSubmitted = normalizeLearnerAnswer(submitted);
+  const normalizedExpected = normalizeLearnerAnswer(expected);
+  const extractedNumbers = (value: string): number[] => (value.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  const isCorrect =
+    normalizedSubmitted === normalizedExpected ||
+    extractedNumbers(submitted).length === 1 &&
+      extractedNumbers(submitted)[0] === extractedNumbers(expected)[0];
+
+  if (isCorrect) {
+    return {
+      answer: `${phrases.correct}\n\n${phrases.result}: **${expected}**\n\n${(deterministic?.derivationSteps ?? []).map((s) => `- ${s}`).join('\n')}`,
+      steps: deterministic?.derivationSteps ?? [],
+      formula: deterministic?.formula ?? null,
+      verification: 'correct',
+    };
+  }
+
+  // Case 4: wrong answer. Show the verified value and the correct chain, and name the
+  // first step that departs from it. Steps are only quoted when the engine produced
+  // them, so a learner's work is never invented.
+  const chain = deterministic?.derivationSteps ?? [];
+  const firstIncorrectStep = findFirstIncorrectEquationStep(
+    submitted,
+    activeProblem,
+    expected,
+  );
+  const firstErrorLine = firstIncorrectStep
+    ? `\n\n${phrases.firstIncorrect} ${firstIncorrectStep}\n${phrases.correctionNote}`
+    : '';
+
+  return {
+    answer: `${phrases.wrong}\n\n${phrases.result}: **${expected}**\n\nCorrect steps:${chain.map((s) => `- ${s}`).join('\n')}${firstErrorLine}`,
+    steps: chain,
+    formula: deterministic?.formula ?? null,
+    verification: 'incorrect',
+  };
+}
+
+/** Strips a trailing sentence so an answer statement is recognised as such. */
+function trimTrailingSentence(value: string): string {
+  return String(value ?? '').split(/[.،。\n]/)[0].trim();
+}
+
+/**
+ * Recovers the ORIGINAL problem from a learner's submitted working.
+ *
+ * Working such as "2x + 5 = 15, so 2x = 20, so x = 10" embeds the problem before the
+ * learner's (wrong) transformations. This returns the first solvable equation in the
+ * text so the answer can be checked against the actual question, not against itself.
+ */
+function recoverProblemFromWorking(text: string): string | null {
+  const segments = String(text ?? '')
+    .split(/,|\bso\b|\bthus\b|\bthen\b|\bi get\b|\bwhich gives\b|،|और|لےکن/i)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    // A bare "x = 10" is the learner's answer, not the problem. Skip those.
+    if (/^\s*[a-z]\s*=\s*-?\d+(?:\.\d+)?\s*$/i.test(segment)) continue;
+    const candidate = extractEquationCandidate(segment);
+    if (candidate && candidate.includes('=') && /[a-z]/i.test(candidate)) {
+      if (toolSolveEquation({ equation: candidate }).success) return candidate;
+    }
+  }
+  return null;
+}
+
 function normalizeMathTopic(
   requestedTopic: MathTopic | string | undefined,
   prompt: string,
@@ -138,6 +682,94 @@ function normalizeMathTopic(
     return requestedTopic as MathTopic;
   }
   return detectMathTopic(prompt, expression);
+}
+
+function buildOfflineFollowUpResponse(
+  prompt: string,
+  conversation: Array<{ role: 'user' | 'assistant'; content: string }>,
+): { answer: string; steps: string[]; formula: string | null } | null {
+  if (!isTutorFollowUpPrompt(prompt)) return null;
+  const previousAssistant = [...conversation].reverse().find((turn) => turn.role === 'assistant' && turn.content.trim());
+  const previousUser = [...conversation].reverse().find((turn) => turn.role === 'user' && turn.content.trim());
+  if (!previousAssistant || !previousUser) return null;
+
+  const question = previousUser.content.slice(-300);
+  const answer = previousAssistant.content.slice(-1200);
+  return {
+    answer: `You are following up on “${question}”. My previous answer said:\n\n> ${answer.replace(/\n/g, '\n> ')}\n\nWhich line or step would you like me to explain? I do not want to guess which detail you mean.`,
+    steps: ['Used the most recent user question and Tutor response as bounded conversation context.'],
+    formula: null,
+  };
+}
+
+function buildConceptualOfflineResponse(
+  prompt: string,
+  topic: MathTopic,
+  language: string,
+  groundingContext: string,
+): { answer: string; steps: string[]; formula: string | null } | null {
+  const normalized = prompt.trim();
+  // `\b` is ASCII-only ([A-Za-z0-9_]), so word-boundary anchors never match Arabic,
+  // Devanagari or CJK text. Use non-boundary alternation so non-Latin concept words
+  // ("سمجھاؤ", "شرح", "什么是") are detected like their Latin counterparts.
+  const conceptIntent = /explain|teach|teaching|learn|understand|meaning of|define|concept|samjhao|سمجھاؤ|سمجھا|شرح|تعليم|تعريف|什么是|erklär|erklär|was ist|expliqu|explíc|spieg|это|что такое|oysa|nedir|anlat|aczik|açıkla|định nghĩa|định\ nghĩa|-defin|defin|significa|signifier|spiega|co to|什么是/i.test(normalized)
+    || /alg[eèé]bra|alg[eèé]bre|algebra|جبرا|الجبرا|代數|代数|알gebra|алгебр|де алгебра/i.test(normalized)
+    || /variable|equation|expression|linear|quadratic|متغیر|مساوات|معادله|متغير|方程|variabel|gleichung|équation|ecuación|equação|equazione|vergelijking|równanie|rovnice|egyenlet|denklem|denkleme|persamaan|变数|変数|변수|переменн/i.test(normalized);
+
+  if (!conceptIntent) {
+    return null;
+  }
+
+  const knowledge = retrieveMathematicsKnowledge({ query: normalized, topic: 'Algebra', limit: 3 });
+  const primaryConcept = knowledge.primaryConcept;
+  const definition = primaryConcept?.definition ?? 'Algebra is the branch of mathematics that uses symbols and variables to represent quantities and relationships.';
+  const formula = primaryConcept?.formulas?.[0] ?? 'ax + b = c';
+  const example = primaryConcept?.examples?.[0];
+  const isUrdu = /^ur($|[-_])/i.test(language) || /[\u0600-\u06FF]/.test(normalized);
+
+  if (isUrdu) {
+    const exampleLine = example
+      ? `مثال: ${example.problem} → ${example.solution}`
+      : 'مثال: 2x + 3 = 11 → x = 4';
+    return {
+      answer: `${langTemplateAnswer(language)}\n\nالجبرا ریاضی کا وہ شعبہ ہے جو متغیرات جیسے x اور y کا استعمال کرتے ہوئے تعلقات اور مساوات کو ظاہر کرتا ہے۔\n\n${definition}\n\nاس کا بنیادی مقصد ہے کہ آپ کسی نامعلوم مقدار کو تلاش کر سکیں۔ مثال کے طور پر، ${formula} ایک لکیری مساوات ہے۔\n\n${exampleLine}\n\nکچھ بنیادی مفاهیم:\n- متغیر: وہ علامت جو ایک نامعلوم قدر کو ظاہر کرتی ہے\n- مستقل: وہ عدد جو تبدیل نہیں ہوتا\n- مساوات: دو اظہار جو برابر ہیں\n- حل: وہ قیمت جو مساوات کو سچ کرتی ہے\n\nجب آپ مساوات کو حل کرتے ہیں تو آپ دونوں اطراف پر ایک ہی عمل کرتے ہیں تاکہ توازن برقرار رہے۔ یہی اصول الجبرا میں بنیادی ہے۔`,
+      steps: [
+        'متغیر اور مستقل کو پہچانیں۔',
+        'مساوات کے دونوں اطراف پر ایک ہی عمل لگائیں۔',
+        'متغیر کو الگ کریں اور حل حاصل کریں۔',
+      ],
+      formula,
+    };
+  }
+
+  const exampleLine = example
+    ? `Example: ${example.problem} → ${example.solution}`
+    : 'Example: 2x + 3 = 11 → x = 4';
+
+  return {
+    answer: `${getLanguageTemplate(language).answerLabel || 'ANSWER:'}\n\nAlgebra is the branch of mathematics that uses symbols and variables to represent quantities and relationships.\n\n${definition}\n\nThe central idea is to solve for an unknown value without changing the truth of the equation. A simple pattern is ${formula}.\n\n${exampleLine}\n\nKey ideas:\n- variable: a symbol that can stand for an unknown value\n- constant: a fixed number\n- equation: a statement that two expressions are equal\n- solution: a value that makes the equation true\n\nWhen you solve an equation, you apply the same operation to both sides so equality is preserved. That is the heart of algebra.`,
+    steps: [
+      'Identify the variables and constants.',
+      'Use inverse operations to isolate the variable.',
+      'Check the solution by substituting it back into the original equation.',
+    ],
+    formula,
+  };
+}
+
+function langTemplateAnswer(language: string): string {
+  const template = getLanguageTemplate(language);
+  return template.answerLabel || 'ANSWER:';
+}
+
+/**
+ * Renders a deterministic result as LaTeX. When the engine's expression is already an
+ * equation (for example `2x + 5 = 15`) the result is attached with an implication
+ * arrow, so the renderer never emits the false claim `2x + 5 = 15 = 5`.
+ */
+function renderVerifiedResult(expression: string, result: string): string {
+  const value = String(expression || '').trim();
+  return value.includes('=') ? `$${value} \\Rightarrow ${result}$` : `$${value} = ${result}$`;
 }
 
 /**
@@ -359,6 +991,8 @@ export async function orchestrateTutor(
     currentResult,
     conversation = [],
     groundingContext: customGrounding = '',
+    documentContext,
+    userAnswer,
   } = options;
   const topic = normalizeMathTopic(requestedTopic, prompt, currentExpression);
 
@@ -381,6 +1015,7 @@ export async function orchestrateTutor(
         derivationSteps: [],
         confidence: 0,
         method: 'None',
+        verification: unavailable('No problem was provided, so there is no mathematical claim to verify.'),
       },
       pedagogy: {
         topic,
@@ -402,13 +1037,23 @@ export async function orchestrateTutor(
   // --------------------------------------------------------------------------
   const extracted = extractMathProblem(prompt);
   let deterministicResult: MathToolResult | null = null;
+  /**
+   * What the engine actually computed, and from which source text.
+   *
+   * Verification needs this: an equation is checked by substituting its roots back
+   * in, while a calculation is re-derived exactly. Without recording the source,
+   * "verified" would degrade into a guess about which check applies.
+   */
+  let deterministicClaim: { kind: 'calculation' | 'equation'; source: string } | null = null;
 
   switch (extracted.kind) {
     case 'calculate':
       deterministicResult = toolCalculate({ expression: extracted.expression ?? '' });
+      deterministicClaim = { kind: 'calculation', source: extracted.expression ?? '' };
       break;
     case 'solveEquation':
       deterministicResult = toolSolveEquation({ equation: extracted.equation ?? '' });
+      deterministicClaim = { kind: 'equation', source: extracted.equation ?? '' };
       break;
     case 'integrate':
       deterministicResult = toolIntegrate({
@@ -416,6 +1061,10 @@ export async function orchestrateTutor(
         a: extracted.a ?? 0,
         b: extracted.b ?? 1,
       });
+      // An antiderivative is not a single scalar claim, so it is not independently
+      // re-derivable here. Recorded as a calculation so the state is honest rather
+      // than silently absent.
+      deterministicClaim = { kind: 'calculation', source: extracted.fnExpr ?? '' };
       break;
   }
 
@@ -426,24 +1075,81 @@ export async function orchestrateTutor(
       .replace(/[?]+$/, '')
       .trim();
 
-    if (cleaned.includes('=') && /[a-zA-Z]/.test(cleaned)) {
-      const eqAttempt = toolSolveEquation({ equation: cleaned });
+    // Natural-language wrappers ("solve for x in 2x + 5 = 15") leave filler text around
+    // the equation, which the solver rejects. Recover the equation-shaped substring
+    // before attempting, so the deterministic engine stays authoritative. The raw text
+    // stays the final candidate because the solver already tolerates some wrapping
+    // (for example Urdu phrasing around a Latin equation).
+    const equationCandidate = extractEquationCandidate(cleaned) || cleaned;
+
+    if (equationCandidate.includes('=') && /[a-zA-Z]/.test(equationCandidate)) {
+      const eqAttempt = toolSolveEquation({ equation: equationCandidate });
       if (eqAttempt.success) {
         deterministicResult = eqAttempt;
+        deterministicClaim = { kind: 'equation', source: equationCandidate };
       }
     } else if (cleaned) {
       const calcAttempt = toolCalculate({ expression: cleaned });
       if (calcAttempt.success) {
         deterministicResult = calcAttempt;
+        deterministicClaim = { kind: 'calculation', source: cleaned };
       }
     }
   }
 
-  // Fallback 2: Active calculator expression if prompt had no match
-  if ((!deterministicResult || !deterministicResult.success) && currentExpression && currentExpression.trim()) {
+  // Fallback 2: Active calculator expression if prompt had no match. An attached
+  // document takes precedence over stale calculator state unless the prompt itself
+  // contains an explicit calculable expression (handled above).
+  if (!documentContext && (!deterministicResult || !deterministicResult.success) && currentExpression && currentExpression.trim()) {
     const calc = toolCalculate({ expression: currentExpression });
     if (calc.success) {
       deterministicResult = calc;
+      deterministicClaim = { kind: 'calculation', source: currentExpression };
+    }
+  }
+
+  // Fallback 3: in checking modes the prompt is the learner's ANSWER, not the problem.
+  // Solving "x = 7" would "verify" 7 and wrongly confirm a wrong answer. Re-solve the
+  // active problem instead so the comparison is against the real question.
+  const isCheckingMode = effectiveMode === 'check-work' || effectiveMode === 'review' || effectiveMode === 'solver-review';
+  if (isCheckingMode) {
+    const activeProblem = problemContext?.canonicalExpression || problemContext?.rawProblem;
+    if (activeProblem && activeProblem.trim()) {
+      const activeCandidate = extractEquationCandidate(activeProblem) || activeProblem;
+      if (activeCandidate.includes('=')) {
+        const activeSolve = toolSolveEquation({ equation: activeCandidate });
+        if (activeSolve.success) {
+          deterministicResult = activeSolve;
+          deterministicClaim = { kind: 'equation', source: activeCandidate };
+        }
+      } else if (activeCandidate.trim()) {
+        const activeCalc = toolCalculate({ expression: activeCandidate });
+        if (activeCalc.success) {
+          deterministicResult = activeCalc;
+          deterministicClaim = { kind: 'calculation', source: activeCandidate };
+        }
+      }
+    } else {
+      // No stored problem. Submitted WORK may still embed the problem, as in
+      // "2x + 5 = 15, so 2x = 20, so x = 10". Recover a genuine problem equation from
+      // it, but never treat a bare answer ("x = 7") as the problem to verify, because
+      // that would only prove the answer against itself.
+      const submittedText = userAnswer ?? prompt;
+      const isTrivialAnswer = /^\s*[a-z]\s*=\s*-?\d+(?:\.\d+)?\s*$/i.test(trimTrailingSentence(submittedText));
+      const embedded = isTrivialAnswer ? null : recoverProblemFromWorking(submittedText);
+      if (embedded) {
+        const embeddedSolve = toolSolveEquation({ equation: embedded });
+        if (embeddedSolve.success) {
+          deterministicResult = embeddedSolve;
+          deterministicClaim = { kind: 'equation', source: embedded };
+        }
+      }
+      if (!embedded) {
+        // Either a bare answer, or working we cannot reduce to a problem. Any result
+        // here came from the learner's own answer and proves nothing on its own.
+        deterministicResult = null;
+        deterministicClaim = null;
+      }
     }
   }
 
@@ -451,6 +1157,30 @@ export async function orchestrateTutor(
     deterministicResult && deterministicResult.success
   );
   const authoritativeValue = deterministicResult?.result || null;
+
+  // --------------------------------------------------------------------------
+  // Independent verification
+  // --------------------------------------------------------------------------
+  // This is the step that makes "verified" mean something. The engine above
+  // produced a value; a *separate* code path re-derives it and the two are
+  // compared. `isVerified` below is derived from the resulting state rather than
+  // from the engine merely having succeeded.
+  const verification: VerificationOutcome = (() => {
+    if (!hasDeterministicAuthority || !deterministicResult || !deterministicClaim) {
+      return verifyUnsupported(prompt);
+    }
+    const reported = String(deterministicResult.result);
+    if (deterministicClaim.kind === 'equation') {
+      // A solver may report several roots; each one is substituted back in.
+      const roots = reported
+        .split(',')
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+      return verifyEquation(deterministicClaim.source, roots);
+    }
+    return verifyCalculation(deterministicClaim.source, reported);
+  })();
+  const isIndependentlyVerified = verification.state === 'VERIFIED';
 
   // --------------------------------------------------------------------------
   // Step 2: Knowledge Grounding Retrieval
@@ -485,28 +1215,82 @@ export async function orchestrateTutor(
 
   if (!isKeyAvailable) {
     let offlineAnswerData: { answer: string; steps: string[]; formula: string | null; quizItem?: TutorQuizItemData };
+  /**
+   * The observable misconception detected from the learner's submitted work, when a
+   * hint was requested and the submission could be classified. Null otherwise — an
+   * unclassifiable submission is never turned into an invented misconception here.
+   */
+  let activeMisconception: MisconceptionState | null = null;
+    let documentPagesUsed: number[] | undefined;
+    let documentProvenance: string | undefined;
+    let documentResponseSource: 'document-grounded' | 'document-insufficient-evidence' | undefined;
 
-    if (effectiveMode === 'socratic') {
+    const conceptResponse = buildConceptualOfflineResponse(prompt, topic, language, groundingContext);
+    const followUpResponse = buildOfflineFollowUpResponse(prompt, conversation);
+
+    // Routing when a document is attached:
+    //   1. A verified deterministic result always wins (numerical authority).
+    //   2. Otherwise answer from the document, admitting when evidence is missing.
+    const hasVerifiedMath = Boolean(deterministicResult?.success);
+    if (documentContext && !hasVerifiedMath) {
+      const documentAnswer = buildDocumentGroundedResponse(prompt, documentContext, language);
+      documentPagesUsed = documentAnswer.pagesUsed;
+      documentProvenance = documentAnswer.provenance;
+      documentResponseSource = documentAnswer.grounded ? 'document-grounded' : 'document-insufficient-evidence';
+      groundingSources.push(`document:${documentContext.fileName}`);
+      offlineAnswerData = {
+        answer: documentAnswer.answer,
+        steps: documentAnswer.steps,
+        formula: documentAnswer.formula,
+      };
+    } else if (effectiveMode === 'socratic') {
       offlineAnswerData = buildSocraticOfflineResponse(prompt, extracted, deterministicResult);
     } else if (effectiveMode === 'step-by-step') {
       offlineAnswerData = buildStepByStepOfflineResponse(prompt, deterministicResult, langTemplate);
     } else if (effectiveMode === 'quiz') {
       offlineAnswerData = buildQuizOfflineResponse(prompt, topic, difficulty, deterministicResult);
+    } else if (effectiveMode === 'hint') {
+      const hint = buildHintOfflineResponse(prompt, problemContext, deterministicResult, hintLevel, language, userAnswer, topic);
+      offlineAnswerData = { answer: hint.answer, steps: hint.steps, formula: hint.formula };
+      activeMisconception = hint.misconception;
+    } else if (effectiveMode === 'check-work' || effectiveMode === 'review' || effectiveMode === 'solver-review') {
+      const review = buildCheckWorkOfflineResponse(prompt, {
+        problemContext,
+        deterministicResult,
+        userAnswer: userAnswer ?? prompt,
+        language,
+      });
+      // The deterministic engine, not this review, is the authority for the value.
+      offlineAnswerData = { answer: review.answer, steps: review.steps, formula: review.formula };
     } else if (deterministicResult && deterministicResult.success) {
+      // A verified deterministic result outranks the generic concept explainer: when the
+      // prompt also contains an equation ("میں 2x + 5 = 15 سمجھاؤ"), the user asked for that
+      // equation to be solved, not for an overview of algebra.
       offlineAnswerData = {
-        answer: `${langTemplate.answerLabel} ${deterministicResult.result}\n\n$${deterministicResult.expression} = ${deterministicResult.result}$\n\n${langTemplate.directAnswerPhrase(
+        answer: `${langTemplate.answerLabel} ${deterministicResult.result}\n\n${renderVerifiedResult(deterministicResult.expression || prompt, deterministicResult.result)}\n\n${langTemplate.directAnswerPhrase(
           deterministicResult.expression || prompt,
           deterministicResult.result
-        )}`,
+        )}\n\n${(deterministicResult.derivationSteps || []).map((s) => `- ${s}`).join('\n')}`,
         steps: deterministicResult.steps || deterministicResult.derivationSteps || [],
         formula: deterministicResult.formula || null,
       };
+    } else if (followUpResponse) {
+      offlineAnswerData = followUpResponse;
+    } else if (conceptResponse) {
+      offlineAnswerData = conceptResponse;
     } else {
+      // Reached only when nothing could be computed and nothing could be explained.
+      // The old copy here claimed results were "100% verified", which was false in
+      // exactly this branch: there is no deterministic result to verify. The state
+      // reported alongside this answer is UNAVAILABLE, and the wording now says so.
       offlineAnswerData = {
-        answer: `Deterministic Math Tutor is active.\n\nQuery: "${prompt}"\n\nAll calculations and derivations remain 100% verified by the deterministic engine.`,
+        answer: `Deterministic Math Tutor is active.\n\nQuery: "${prompt}"\n\n`
+          + 'No deterministic result could be produced for this request, so there is nothing to verify. '
+          + 'Calcora will not present an unverified value as a result. Try an equation, an arithmetic '
+          + 'expression, or a percentage calculation.',
         steps: [
           'Input analyzed deterministically.',
-          'Authoritative math engine verified consistency.',
+          'No computable mathematical claim was found, so no result was produced.',
         ],
         formula: null,
       };
@@ -521,14 +1305,15 @@ export async function orchestrateTutor(
       mode: effectiveMode,
       deterministicAuthority: {
         isAvailable: hasDeterministicAuthority,
-        isVerified: hasDeterministicAuthority,
+        isVerified: isIndependentlyVerified,
         authoritativeResult: authoritativeValue,
         exactResult: deterministicResult?.exactResult,
         derivationSteps: deterministicResult?.derivationSteps || [],
-        confidence: hasDeterministicAuthority ? 1.0 : 0,
+        confidence: isIndependentlyVerified ? 1.0 : 0,
         method: hasDeterministicAuthority
           ? 'Deterministic AST/RPN Evaluator'
           : 'None',
+        verification,
       },
       pedagogy: {
         topic,
@@ -541,10 +1326,12 @@ export async function orchestrateTutor(
       groundingSources,
       isOfflineFallback: true,
       discrepancyDetected: false,
+      misconception: activeMisconception,
       executionTimeMs: Math.round(performance.now() - t0),
       fallbackStatus: options.offlineOnly ? 'offline-deterministic-fallback' : 'gemini-unavailable',
-      responseSource: 'deterministic-fallback',
-
+      responseSource: documentResponseSource ?? 'deterministic-fallback',
+      documentProvenance,
+      documentPagesUsed,
     };
   }
 
@@ -740,7 +1527,7 @@ Return your response in clean JSON matching:
       fallbackData = buildQuizOfflineResponse(prompt, topic, difficulty, deterministicResult);
     } else if (deterministicResult && deterministicResult.success) {
       fallbackData = {
-        answer: `${langTemplate.answerLabel} ${authoritativeValue}\n\n$${deterministicResult.expression} = ${authoritativeValue}$`,
+        answer: `${langTemplate.answerLabel} ${deterministicResult.result}\n\n${renderVerifiedResult(deterministicResult.expression || prompt, deterministicResult.result)}`,
         steps: deterministicResult.steps || deterministicResult.derivationSteps || [],
         formula: deterministicResult.formula || null,
       };
@@ -759,6 +1546,9 @@ Return your response in clean JSON matching:
           derivationSteps: [],
           confidence: 0,
           method: 'None',
+          verification: unavailable(
+            'The Tutor could not produce a response, so no mathematical result is available to verify.',
+          ),
         },
         pedagogy: {
           topic,
@@ -786,14 +1576,15 @@ Return your response in clean JSON matching:
       mode: effectiveMode,
       deterministicAuthority: {
         isAvailable: hasDeterministicAuthority,
-        isVerified: hasDeterministicAuthority,
+        isVerified: isIndependentlyVerified,
         authoritativeResult: authoritativeValue,
         exactResult: deterministicResult?.exactResult,
         derivationSteps: deterministicResult?.derivationSteps || [],
-        confidence: hasDeterministicAuthority ? 1.0 : 0,
+        confidence: isIndependentlyVerified ? 1.0 : 0,
         method: hasDeterministicAuthority
           ? 'Deterministic AST/RPN Evaluator'
           : 'None',
+        verification,
       },
       pedagogy: {
         topic,
@@ -823,14 +1614,15 @@ Return your response in clean JSON matching:
     mode: effectiveMode,
     deterministicAuthority: {
       isAvailable: hasDeterministicAuthority,
-      isVerified: hasDeterministicAuthority,
+      isVerified: isIndependentlyVerified,
       authoritativeResult: authoritativeValue,
       exactResult: deterministicResult?.exactResult,
       derivationSteps: deterministicResult?.derivationSteps || [],
-      confidence: hasDeterministicAuthority ? 1.0 : 0,
+      confidence: isIndependentlyVerified ? 1.0 : 0,
       method: hasDeterministicAuthority
         ? 'Deterministic AST/RPN Evaluator'
         : 'None',
+      verification,
     },
     pedagogy: {
       topic,
