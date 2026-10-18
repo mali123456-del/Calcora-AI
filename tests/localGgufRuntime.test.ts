@@ -32,7 +32,7 @@ async function main() {
     await mkdir(modelRoot);
     await writeFile(path.join(modelRoot, generalName), Buffer.from('GGUF-test-general'));
     await writeFile(path.join(modelRoot, codingName), Buffer.from('GGUF-test-coding'));
-    await writeFile(executable, 'test executable placeholder');
+    await writeFile(executable, 'test executable placeholder', { mode: 0o755 });
 
     const runtime = createLocalGgufRuntime({
       modelsDirectory: modelRoot,
