@@ -1,0 +1,9 @@
+﻿Calcora AI Windows llama.cpp runtime bundle.
+Files copied from: E:\calcora-tools\llama.cpp
+
+Reported executable version:
+0.6.0-dev (build 11500, commit 097f5b533)
+
+This note records the reported version only. It does not independently
+verify binary provenance, build reproducibility, or third-party licences.
+Review applicable licences before distributing this bundle publicly.
