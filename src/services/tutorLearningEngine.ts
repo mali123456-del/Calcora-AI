@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { isAuthorizationTokenValid } from './requestSecurity';
 
-export interface TutorEvaluationCase { prompt: string; expectedBehavior: string; deterministicAuthority: boolean; sourceItemId?: string | null; }
+export interface TutorEvaluationCase {
+  prompt: string;
+  expectedBehavior: string;
+  deterministicAuthority: boolean;
+  sourceItemId?: string | null;
+}
 
 export function isLearningEvaluationAuthorized(providedToken: string | undefined, expectedToken: string | undefined): boolean {
   return isAuthorizationTokenValid(providedToken, expectedToken);

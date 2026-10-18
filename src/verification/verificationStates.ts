@@ -97,17 +97,23 @@ export function unavailable(reason: string): VerificationOutcome {
  */
 export function fromAgentStatus(
   status: 'PASS' | 'FAIL' | 'UNKNOWN',
-  method: 'substitute' | 'recompute' | 'none',
+  method: 'substitute' | 'recompute' | 'spot-check' | 'none',
   reason: string,
   observed: string | undefined,
   actual: string | null,
 ): VerificationOutcome {
+  // A derivative spot-check is a second, independently computed numeric
+  // observation (central difference), so it maps to `recompute` exactly as the
+  // independent verifier maps it.
+  const mapped: VerificationMethod = method === 'substitute'
+    ? 'equation-residual'
+    : method === 'recompute' || method === 'spot-check'
+      ? 'recompute'
+      : 'none';
   if (status === 'PASS') {
-    const mapped: VerificationMethod = method === 'substitute' ? 'equation-residual' : method === 'recompute' ? 'recompute' : 'none';
     return verifiedBy(mapped, reason, actual ?? observed ?? '', observed ?? actual ?? '');
   }
   if (status === 'FAIL') {
-    const mapped: VerificationMethod = method === 'substitute' ? 'equation-residual' : method === 'recompute' ? 'recompute' : 'none';
     return failedVerification(mapped, reason, actual, observed ?? null);
   }
   return unverified(reason);

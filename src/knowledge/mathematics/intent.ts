@@ -4,11 +4,13 @@ export type MathematicalIntent =
   | 'COMPARE_METHODS' | 'SIMPLIFY' | 'FACTOR' | 'DIFFERENTIATE' | 'INTEGRATE'
   | 'SOLVE_EQUATION' | 'SOLVE_SYSTEM' | 'STATISTICS' | 'PROBABILITY'
   | 'PHYSICS_MATH' | 'ENGINEERING_MATH' | 'DEFINITION' | 'WHY_QUESTION'
-  | 'HOW_QUESTION' | 'EXAM_HELP' | 'REVIEW_MISTAKE';
+  | 'HOW_QUESTION' | 'EXAM_HELP' | 'REVIEW_MISTAKE' | 'GREETING' | 'PRODUCT_CAPABILITIES';
 
 export function classifyMathematicalIntent(text: string): MathematicalIntent {
   const input = text.trim().toLowerCase();
   if (!input) return 'EXPLAIN_CONCEPT';
+  if (/^(?:hi|hello|hey|hiya|good morning|good afternoon|good evening)\b[!.?,\s]*$/i.test(input)) return 'GREETING';
+  if (/^(?:what can|what does)\s+(?:calcora(?:\s+ai)?|you|this app)\s+(?:do|help with)\b/i.test(input)) return 'PRODUCT_CAPABILITIES';
   if (/\b(check my (step|answer|work)|is this (correct|right)|verify)\b/.test(input)) return 'CHECK_STEP';
   if (/\b(why|how come)\b/.test(input)) return 'WHY_QUESTION';
   if (/\b(explain|teach me|what is|what are|define|meaning of)\b/.test(input)) {

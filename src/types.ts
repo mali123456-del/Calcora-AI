@@ -3,7 +3,7 @@ export type AngleMode = 'DEG' | 'RAD' | 'GRAD';
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type CalculatorSubMode = 'standard' | 'scientific' | 'engineering' | 'programmer';
 export type PrecisionMode = 'auto' | 2 | 4 | 6 | 8 | 10 | 12;
-export type ActiveTab = 'home'|'calculator'|'graph'|'equations'|'calculus'|'matrix'|'programmer'|'statistics'|'engineering'|'units'|'finance'|'currency'|'ai'|'tutor'|'formulas'|'practice'|'multimodal'|'datalab'|'notebook'|'workspaces'|'history'|'settings';
+export type ActiveTab = 'home'|'calculator'|'graph'|'equations'|'calculus'|'matrix'|'programmer'|'statistics'|'engineering'|'units'|'finance'|'currency'|'ai'|'tutor'|'formulas'|'practice'|'multimodal'|'datalab'|'notebook'|'workspaces'|'history'|'settings'|'developer';
 export interface HistoryItem { id:string; expression:string; result:string; angleMode:AngleMode; precision?:PrecisionMode; mode?:CalculatorSubMode; category?:string; isFavorite?:boolean; notes?:string; verified?:boolean; timestamp:number; }
 export interface CalculationResult { value:number; display:string; exactFraction?:string; error?:string; steps?:string[]; }
 export interface Fraction { numerator:number; denominator:number; }

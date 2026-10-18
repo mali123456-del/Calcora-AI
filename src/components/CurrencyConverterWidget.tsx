@@ -164,7 +164,7 @@ export const CurrencyConverterWidget: React.FC<CurrencyConverterWidgetProps> = (
           <div>
             <div className="font-semibold text-slate-200 flex items-center gap-2">
               <span>ISO 4217 Currency Hub</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-mono">
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-500/20 text-emerald-300 font-mono">
                 {ISO_CURRENCIES.length} Currencies
               </span>
             </div>
@@ -177,7 +177,7 @@ export const CurrencyConverterWidget: React.FC<CurrencyConverterWidgetProps> = (
         <div className="flex items-center gap-2">
           {/* Rate freshness pill */}
           <span
-            className={`px-2 py-1 rounded-lg text-[10px] font-mono flex items-center gap-1.5 ${
+            className={`px-2 py-1 rounded-lg text-[11px] font-mono flex items-center gap-1.5 ${
               conversionResult.freshness === 'live'
                 ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
                 : conversionResult.freshness === 'cached'
@@ -234,7 +234,7 @@ export const CurrencyConverterWidget: React.FC<CurrencyConverterWidgetProps> = (
                 }`}
               >
                 <span>{c.code}</span>
-                <span className="text-[10px] opacity-75">{c.symbol}</span>
+                <span className="text-[11px] opacity-75">{c.symbol}</span>
               </button>
             ))}
           </div>
@@ -331,7 +331,7 @@ export const CurrencyConverterWidget: React.FC<CurrencyConverterWidgetProps> = (
           <div className="flex items-center gap-2 flex-wrap">
             {/* Precision Selector */}
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-xl text-xs">
-              <span className="text-[10px] text-slate-400 font-medium">Decimals:</span>
+              <span className="text-[11px] text-slate-400 font-medium">Decimals:</span>
               {[2, 4, 6, 8].map((p) => (
                 <button
                   key={p}

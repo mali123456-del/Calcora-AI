@@ -291,7 +291,7 @@ export const Keypad: React.FC<KeypadProps> = ({
           <button
             type="button"
             onClick={() => onConstant('π')}
-            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-indigo-950/40 dark:bg-indigo-950/40 light:bg-indigo-50 text-indigo-300 dark:text-indigo-300 light:text-indigo-700 border border-indigo-800/40 hover:bg-indigo-900/50 transition-all active:scale-95"
+            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-cyan-950/40 dark:bg-cyan-950/40 light:bg-cyan-50 text-cyan-300 dark:text-cyan-300 light:text-cyan-700 border border-cyan-800/40 hover:bg-cyan-900/50 transition-all active:scale-95"
             title="Pi constant (3.14159...)"
           >
             π
@@ -299,7 +299,7 @@ export const Keypad: React.FC<KeypadProps> = ({
           <button
             type="button"
             onClick={() => onConstant('e')}
-            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-indigo-950/40 dark:bg-indigo-950/40 light:bg-indigo-50 text-indigo-300 dark:text-indigo-300 light:text-indigo-700 border border-indigo-800/40 hover:bg-indigo-900/50 transition-all active:scale-95"
+            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-cyan-950/40 dark:bg-cyan-950/40 light:bg-cyan-50 text-cyan-300 dark:text-cyan-300 light:text-cyan-700 border border-cyan-800/40 hover:bg-cyan-900/50 transition-all active:scale-95"
             title="Euler's Number (2.71828...)"
           >
             e
@@ -307,7 +307,7 @@ export const Keypad: React.FC<KeypadProps> = ({
           <button
             type="button"
             onClick={() => onConstant('φ')}
-            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-indigo-950/40 dark:bg-indigo-950/40 light:bg-indigo-50 text-indigo-300 dark:text-indigo-300 light:text-indigo-700 border border-indigo-800/40 hover:bg-indigo-900/50 transition-all active:scale-95"
+            className="py-2.5 sm:py-3 text-xs sm:text-sm font-mono-math font-semibold rounded-xl bg-cyan-950/40 dark:bg-cyan-950/40 light:bg-cyan-50 text-cyan-300 dark:text-cyan-300 light:text-cyan-700 border border-cyan-800/40 hover:bg-cyan-900/50 transition-all active:scale-95"
             title="Golden Ratio (1.61803...)"
           >
             φ
@@ -516,7 +516,7 @@ export const Keypad: React.FC<KeypadProps> = ({
             id="btn-calculate"
             type="button"
             onClick={onCalculate}
-            className="col-span-3 py-3 sm:py-3.5 text-lg font-mono-math font-bold rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 shadow-lg shadow-cyan-500/25 transition-all active:scale-98 flex items-center justify-center"
+            className="col-span-3 py-3 sm:py-3.5 text-lg font-mono-math font-bold rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/25 transition-all active:scale-98 flex items-center justify-center"
             title="Calculate (=)"
           >
             =

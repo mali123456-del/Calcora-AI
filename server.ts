@@ -24,6 +24,7 @@ import { getServerHost, getServerPort, resolveGeminiApiKey } from './electron/ru
 import { isAuthorizationTokenValid } from './src/services/requestSecurity';
 import { createRateLimitMiddleware } from './src/services/requestRateLimit';
 import { createCorsMiddleware, createOriginPolicy } from './src/services/corsPolicy';
+import { buildContentSecurityPolicy, shouldSendContentSecurityPolicy } from './src/services/contentSecurityPolicy';
 import {
   runMathAgent,
   ALLOWED_AGENT_TOOLS,
@@ -105,6 +106,7 @@ async function runLocalTutor(request: LocalTutorRequest): Promise<LocalTutorResu
     groundingContext: request.groundingContext,
     userAnswer: request.userAnswer,
     documentContext: document,
+    offlineOnly: true,
   });
 }
 
@@ -180,6 +182,11 @@ export async function startServer(): Promise<Server> {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+    // Strict CSP in production only: the dev server runs the Vite middleware,
+    // which needs an inline HMR client and a websocket connection.
+    if (shouldSendContentSecurityPolicy()) {
+      res.setHeader('Content-Security-Policy', buildContentSecurityPolicy());
+    }
     next();
   });
 
@@ -406,33 +413,32 @@ export async function startServer(): Promise<Server> {
 
   // AI Math Assistant & Tutor endpoint
   app.post('/api/ai/math', async (req, res) => {
-    let deterministicResult: string | null = null;
-    let deterministicVerified = false;
-    try {
-      const {
-        prompt,
-        conversation = [],
-        currentExpression,
-        currentResult,
-        tutorMode = 'assistant',
-        responseProfile = 'balanced',
-        learningObjective = 'concept',
-        difficulty = 'intermediate',
-        topic = 'Algebra',
-        hintLevel = 1,
-        socraticMode = false,
-        userStep,
-        groundingContext = '',
-        groundedConcepts = [],
-        audienceProfile = 'general',
-        deterministicVerification,
-        language = 'en',
-        document,
-        offlineOnly = false,
-        localModelId,
-      } = req.body;
+    const {
+      prompt,
+      conversation = [],
+      currentExpression,
+      currentResult,
+      tutorMode = 'assistant',
+      responseProfile = 'balanced',
+      learningObjective = 'concept',
+      difficulty = 'intermediate',
+      topic = 'Algebra',
+      hintLevel = 1,
+      socraticMode = false,
+      userStep,
+      groundingContext = '',
+      groundedConcepts = [],
+      audienceProfile = 'general',
+      deterministicVerification,
+      language = 'en',
+      document,
+      offlineOnly = false,
+      localModelId,
+    } = req.body ?? {};
+    const cleanPrompt = typeof prompt === 'string' ? prompt.trim() : '';
 
-      if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1000) {
+    try {
+      if (!cleanPrompt || cleanPrompt.length > 1000) {
         return res.status(400).json({ error: 'Prompt is required and must be within the 1000-character limit' });
       }
       const conversationContext = Array.isArray(conversation)
@@ -446,20 +452,12 @@ export async function startServer(): Promise<Server> {
       const safeUserStep = typeof userStep === 'string' ? userStep.slice(0, 4000) : undefined;
       const safeGroundingContext = typeof groundingContext === 'string' ? groundingContext.slice(0, 12000) : '';
 
-      // Backward-compatible defense: older Quick Prompt clients embedded internal response-profile metadata.
-      // Never let that control marker enter conversation history, deterministic parsing, or user-visible output.
-      const embeddedProfile = prompt.match(/^\[CALCORA_RESPONSE_PROFILE:(quick|deep|balanced)\]\s*/i)?.[1] as 'quick' | 'deep' | 'balanced' | undefined;
-      const cleanPrompt = prompt.replace(/^\[CALCORA_RESPONSE_PROFILE:(?:quick|deep|balanced)\]\s*/i, '').trim();
-      const effectiveResponseProfile = embeddedProfile || responseProfile;
-
-      const inputAnalysis = analyzeTutorInput(cleanPrompt, language);
-      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(cleanPrompt);
+      const inputAnalysis = analyzeTutorInput(prompt, language);
+      const safeLanguage = isTutorLanguage(language) && language !== 'auto' ? language : inputAnalysis.requestedLanguage || detectLanguageFromText(prompt);
       const languageCapability = getTutorLanguageCapability(safeLanguage);
       const inputUnderstandingInstruction = buildInputUnderstandingInstruction(inputAnalysis);
       const multilingualResponseQualityInstruction = buildMultilingualResponseQualityInstruction(inputAnalysis, safeLanguage);
       const orchestration = await orchestrateTutor(cleanPrompt, { mode: tutorMode, difficulty, learningObjective, topic, userAnswer: userStep, hintLevel });
-      deterministicResult = orchestration.deterministic?.success ? orchestration.deterministic.result : null;
-      deterministicVerified = orchestration.verification.state === 'VERIFIED';
       const deterministicContext = orchestration.deterministic?.success
         ? JSON.stringify(orchestration.deterministic)
         : '';
@@ -608,9 +606,9 @@ export async function startServer(): Promise<Server> {
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
       });
 
-      const responseProfileGuidance = effectiveResponseProfile === 'quick'
+      const responseProfileGuidance = responseProfile === 'quick'
         ? `QUICK RESPONSE PROFILE ACTIVE: Put the verified result or direct definition first. Keep the initial answer compact (prefer 3-6 short lines), then offer expandable detail. Do not sacrifice mathematical correctness or domain restrictions.`
-        : effectiveResponseProfile === 'deep'
+        : responseProfile === 'deep'
         ? `DEEP RESPONSE PROFILE ACTIVE: Give a rigorous derivation, assumptions, domain checks, alternative method when useful, and a compact verification section.`
         : `BALANCED RESPONSE PROFILE ACTIVE: Give the direct result first, then the minimum useful derivation and verification.`;
 
@@ -626,7 +624,7 @@ export async function startServer(): Promise<Server> {
         ? `SOLVER REVIEW MODE ACTIVE: Audit the mathematical solution, edge cases, domain restrictions, assumptions, and applied rules.`
         : `STANDARD ASSISTANT MODE ACTIVE: Provide direct, concise answers with step-by-step proofs and LaTeX formulas.`;
 
-      const knowledgeQuery = cleanPrompt.slice(0, 500);
+      const knowledgeQuery = prompt.slice(0, 500);
       const knowledgeResult = await executeMathTool('retrieveKnowledge', { query: knowledgeQuery, limit: 6 });
       const retrievedKnowledge = knowledgeResult.success ? knowledgeResult.metadata?.matches : [];
       const authoritativeDeterministicContext = deterministicContext.slice(0, 8000);
@@ -721,9 +719,35 @@ Return clean JSON:
       const parsed = parseGeminiJsonResponse(text);
       if (!parsed) {
         const classification = classifyGeminiError(new Error(text ? 'Malformed JSON payload' : 'Gemini returned an empty response'));
+        if (orchestration.deterministic?.success) {
+          return res.json({
+            success: true,
+            isOfflineFallback: true,
+            answer: orchestration.answer,
+            steps: orchestration.steps,
+            deterministicResult: orchestration.deterministic.result,
+            deterministicExactResult: orchestration.deterministic.exactResult,
+            deterministicSteps: orchestration.deterministic.derivationSteps,
+            deterministicVerified: orchestration.verification.state === 'VERIFIED',
+            verification: orchestration.verification,
+            geminiState: classification.state,
+            geminiError: classification.userMessage,
+            meta: {
+              responseProfile,
+              tutorMode,
+              language: safeLanguage,
+              grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
+              deterministicVerified: orchestration.verification.state === 'VERIFIED',
+              verificationState: orchestration.verification.state,
+              geminiFallback: true,
+              requiresCloudApiKey: false,
+              latencyMs: Date.now() - startedAt,
+              model: 'gemini-3.8-flash',
+            },
+          });
+        }
         return res.status(502).json({
           success: false,
-          isOfflineFallback: Boolean(orchestration.deterministic?.success),
           error: classification.userMessage,
           geminiState: classification.state,
           deterministicResult: orchestration.deterministic?.success ? orchestration.deterministic.result : null,
@@ -732,9 +756,33 @@ Return clean JSON:
         });
       }
 
-      res.json({
+      const deterministicResult = orchestration.deterministic;
+      const deterministicVerified = orchestration.verification.state === 'VERIFIED';
+      const authoritativeResult = deterministicResult?.result ?? null;
+      const answerText = typeof parsed.answer === 'string' ? parsed.answer : '';
+      const discrepancyDetected = Boolean(
+        deterministicVerified &&
+        authoritativeResult &&
+        answerText &&
+        !localExplanationMatchesDeterministicResult(answerText, authoritativeResult)
+      );
+
+      // Deterministic authority is absolute: never return a Gemini answer that omits or
+      // contradicts a verified calculator result. Keep the response useful by using the
+      // deterministic tutor answer whenever Gemini disagrees.
+      const safeParsed = discrepancyDetected
+        ? {
+            ...parsed,
+            answer: orchestration.answer,
+            expression: deterministicResult?.expression ?? parsed.expression ?? null,
+            steps: deterministicResult?.derivationSteps ?? parsed.steps,
+            formula: deterministicResult?.formula ?? parsed.formula ?? null,
+          }
+        : parsed;
+
+      return res.json({
         success: true,
-        ...parsed,
+        ...safeParsed,
         deterministicResult: orchestration.deterministic?.success ? orchestration.deterministic.result : null,
         deterministicExactResult: orchestration.deterministic?.success ? orchestration.deterministic.exactResult : null,
         deterministicSteps: orchestration.deterministic?.success ? orchestration.deterministic.derivationSteps : [],
@@ -742,11 +790,11 @@ Return clean JSON:
         verification: orchestration.verification,
         geminiState: 'GEMINI_CONFIGURED',
         meta: {
-          responseProfile: effectiveResponseProfile,
+          responseProfile,
           tutorMode,
           language: safeLanguage,
           grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
-          deterministicVerified: Boolean(safeDeterministicVerification?.isVerified),
+          deterministicVerified,
           latencyMs: Date.now() - startedAt,
           model: 'gemini-3.8-flash',
         },
@@ -754,13 +802,60 @@ Return clean JSON:
     } catch (error: unknown) {
       const classification = classifyGeminiError(error);
       console.error('AI Math endpoint error:', classification.state);
+      if (classification.allowFallback) {
+        try {
+          const localTutor = await runLocalTutor({
+            prompt: cleanPrompt,
+            tutorMode,
+            language: isTutorLanguage(language) && language !== 'auto' ? language : detectLanguageFromText(cleanPrompt),
+            topic,
+            difficulty,
+            learningObjective,
+            hintLevel,
+            userStep: typeof userStep === 'string' ? userStep.slice(0, 4000) : undefined,
+            currentExpression: typeof currentExpression === 'string' ? currentExpression : undefined,
+            currentResult: typeof currentResult === 'string' ? currentResult : undefined,
+            groundingContext: typeof groundingContext === 'string' ? groundingContext.slice(0, 12000) : '',
+            userAnswer: typeof userStep === 'string' ? userStep.slice(0, 4000) : undefined,
+            document,
+          });
+          const verification = localTutor.deterministicAuthority.verification;
+          return res.json({
+            success: localTutor.success,
+            isOfflineFallback: true,
+            answer: localTutor.answer,
+            steps: localTutor.steps,
+            expression: localTutor.expression,
+            formula: localTutor.formula,
+            deterministicResult: localTutor.deterministicAuthority.authoritativeResult,
+            deterministicExactResult: localTutor.deterministicAuthority.exactResult ?? null,
+            deterministicSteps: localTutor.deterministicAuthority.derivationSteps,
+            deterministicVerified: verification.state === 'VERIFIED',
+            verification,
+            geminiState: classification.state,
+            geminiError: classification.userMessage,
+            meta: {
+              responseProfile,
+              tutorMode,
+              language: localTutor.pedagogy.topic ? (isTutorLanguage(language) ? language : detectLanguageFromText(cleanPrompt)) : 'en',
+              grounded: localTutor.groundingSources.length > 0,
+              groundingSources: localTutor.groundingSources,
+              deterministicVerified: verification.state === 'VERIFIED',
+              verificationState: verification.state,
+              responseSource: localTutor.responseSource,
+              requiresCloudApiKey: false,
+              geminiFallback: true,
+              model: 'local-deterministic',
+            },
+          });
+        } catch (fallbackError) {
+          console.error('Local Tutor fallback failed:', fallbackError instanceof Error ? fallbackError.name : 'unknown');
+        }
+      }
       return res.status(classification.state === 'GEMINI_RATE_LIMITED' || classification.state === 'GEMINI_QUOTA_EXCEEDED' || classification.state === 'GEMINI_SERVER_ERROR' ? 503 : 502).json({
         success: false,
-        isOfflineFallback: deterministicResult !== null,
         error: classification.userMessage,
         geminiState: classification.state,
-        deterministicResult,
-        deterministicVerified,
       });
     }
   });
@@ -780,6 +875,13 @@ Return clean JSON:
   } else {
     const distPath = path.join(APP_ROOT, 'dist');
     app.use(express.static(distPath));
+    // An unmatched /api/* path is a client error, not a page. Without this the
+    // SPA catch-all below answers every unknown API route with HTTP 200 and the
+    // entire application shell, which hides typos and broken clients behind a
+    // "success" status.
+    app.use('/api', (_req, res) => {
+      res.status(404).json({ success: false, error: 'Unknown API endpoint.' });
+    });
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 

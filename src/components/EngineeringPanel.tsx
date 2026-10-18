@@ -301,8 +301,9 @@ export const EngineeringPanel: React.FC<EngineeringPanelProps> = ({ onSendToCalc
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Voltage (V)</label>
+                <label htmlFor="eng-power-voltage" className="block text-[11px] font-medium text-slate-500 mb-1">Voltage (V)</label>
                 <input
+                  id="eng-power-voltage"
                   type="number"
                   value={pwrV}
                   onChange={(e) => setPwrV(e.target.value)}
@@ -310,8 +311,9 @@ export const EngineeringPanel: React.FC<EngineeringPanelProps> = ({ onSendToCalc
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Current (A)</label>
+                <label htmlFor="eng-power-current" className="block text-[11px] font-medium text-slate-500 mb-1">Current (A)</label>
                 <input
+                  id="eng-power-current"
                   type="number"
                   value={pwrI}
                   onChange={(e) => setPwrI(e.target.value)}

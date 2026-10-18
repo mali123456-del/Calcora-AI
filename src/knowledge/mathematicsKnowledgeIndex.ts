@@ -1,5 +1,6 @@
 import { MathKnowledgeItem, MATHEMATICS_KNOWLEDGE_VERSION } from './knowledgeTypes';
 import { auditKnowledgeCorpus } from './knowledgeVerification';
+import { rankMultilingualConceptMatch } from './multilingualMathConcepts';
 import { arithmeticKnowledge } from './mathematics/arithmetic';
 import { algebraKnowledge } from './mathematics/algebra';
 import { geometryKnowledge } from './mathematics/geometry';
@@ -60,29 +61,88 @@ for (const item of ALL_MATHEMATICS_KNOWLEDGE) {
  * Searches the mathematical knowledge base for items matching query tokens
  */
 export function searchKnowledgeBase(query: string, limit = 5): MathKnowledgeItem[] {
-  if (!query || !query.trim()) return [];
-  const normalized = query.toLowerCase().trim();
-  const tokens = normalized.split(/\s+/).filter((t) => t.length > 1);
+  return searchKnowledgeBaseRanked(query, limit).map(entry => entry.item);
+}
 
-  const scored = ALL_MATHEMATICS_KNOWLEDGE.map((item) => {
-    let score = 0;
-    const conceptLower = item.concept.toLowerCase();
-    const defLower = item.definition.toLowerCase();
-    const topicLower = item.topic.toLowerCase();
-    const subtopicLower = item.subtopic.toLowerCase();
+/**
+ * English function words that carry no topical meaning in a math query.
+ *
+ * Token scoring is additive, and "of"/"and" appear in nearly every definition
+ * in the corpus, so keeping them meant a query the corpus cannot answer
+ * ("limits and continuity") still accrued +40 from one statistics definition
+ * and was presented as the retrieved concept. These are dropped from the
+ * token stream only; exact-match scoring still sees the full query.
+ */
+const QUERY_STOPWORDS: ReadonlySet<string> = new Set([
+  'of', 'and', 'or', 'the', 'a', 'an', 'in', 'on', 'to', 'for', 'is', 'are',
+  'was', 'were', 'be', 'by', 'as', 'at', 'it', 'its', 'this', 'that', 'with',
+  'from', 'into',
+]);
+
+/**
+ * Lowercase projection of the corpus, built once.
+ *
+ * Scoring is a hot path: every Tutor and Math Agent request runs it, and the
+ * original implementation lower-cased each item's concept, definition, topic,
+ * subtopic and every keyword and alias on every query. The corpus is authored
+ * data that never changes at runtime, so those strings are computed once here.
+ * Measured with `tests/retrievalBenchmark.ts`.
+ */
+interface LowercasedKnowledgeItem {
+  item: MathKnowledgeItem;
+  concept: string;
+  definition: string;
+  topic: string;
+  subtopic: string;
+  keywords: readonly string[];
+  aliases: readonly string[];
+}
+
+const LOWERCASED_CORPUS: readonly LowercasedKnowledgeItem[] = ALL_MATHEMATICS_KNOWLEDGE.map((item) => ({
+  item,
+  concept: item.concept.toLowerCase(),
+  definition: item.definition.toLowerCase(),
+  topic: item.topic.toLowerCase(),
+  subtopic: item.subtopic.toLowerCase(),
+  keywords: item.keywords.map((keyword) => keyword.toLowerCase()),
+  aliases: item.aliases.map((alias) => alias.toLowerCase()),
+}));
+
+/**
+ * The same ranking as `searchKnowledgeBase`, but carrying the scores.
+ *
+ * Callers that decide whether a match is *good enough* to ground an answer
+ * (rather than merely the least-bad candidate) need the score: a query with no
+ * relevant corpus item still produces a positive-scoring top hit through
+ * incidental definition text, and treating that as "the retrieved concept"
+ * would ground an answer in the wrong topic.
+ */
+export function searchKnowledgeBaseRanked(
+  query: string,
+  limit = 5,
+): Array<{ item: MathKnowledgeItem; score: number }> {
+  if (!query || !query.trim()) return [];
+  const normalized = query.toLocaleLowerCase().trim();
+  const tokens = normalized
+    .split(/\s+/)
+    .filter((t) => t.length > 1 && !QUERY_STOPWORDS.has(t));
+
+  const scored = LOWERCASED_CORPUS.map((entry) => {
+    const item = entry.item;
+    let score = rankMultilingualConceptMatch(item, normalized);
 
     // Exact matches
-    if (conceptLower.includes(normalized)) score += 100;
-    if (item.aliases.some((a) => a.toLowerCase().includes(normalized))) score += 80;
-    if (item.keywords.some((k) => k.toLowerCase().includes(normalized))) score += 60;
-    if (topicLower.includes(normalized) || subtopicLower.includes(normalized)) score += 50;
+    if (entry.concept.includes(normalized)) score += 100;
+    if (entry.aliases.some((alias) => alias.includes(normalized))) score += 80;
+    if (entry.keywords.some((keyword) => keyword.includes(normalized))) score += 60;
+    if (entry.topic.includes(normalized) || entry.subtopic.includes(normalized)) score += 50;
 
     // Token matches
     for (const token of tokens) {
-      if (conceptLower.includes(token)) score += 20;
-      if (item.keywords.some((k) => k.toLowerCase().includes(token))) score += 15;
-      if (item.aliases.some((a) => a.toLowerCase().includes(token))) score += 15;
-      if (defLower.includes(token)) score += 5;
+      if (entry.concept.includes(token)) score += 20;
+      if (entry.keywords.some((keyword) => keyword.includes(token))) score += 15;
+      if (entry.aliases.some((alias) => alias.includes(token))) score += 15;
+      if (entry.definition.includes(token)) score += 5;
     }
 
     return { item, score };
@@ -91,8 +151,7 @@ export function searchKnowledgeBase(query: string, limit = 5): MathKnowledgeItem
   return scored
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((s) => s.item);
+    .slice(0, limit);
 }
 
 /**

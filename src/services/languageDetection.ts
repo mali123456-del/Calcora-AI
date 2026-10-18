@@ -60,8 +60,22 @@ export const SCRIPT_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
 ];
 
 /** Roman Urdu cue words (Romanized input is very common for Urdu/Hindi). */
+/**
+ * Roman Urdu cue words.
+ *
+ * `kya`, `ka`, `ki`, `ke`, `hai` and `hal` are added because Roman Urdu sentences such as
+ * "x^2 ka derivative kya hai?" previously matched only ROMAN_HINDI (via `kya`) and were
+ * classified as Hindi, so a Roman Urdu request was answered in Devanagari.
+ *
+ * Tradeoff, stated rather than hidden: Roman Urdu and Roman Hindi are lexically almost
+ * identical, so `kya`/`hai`/`ka` are not diagnostic on their own. Detection scores Roman Urdu
+ * above Roman Hindi (0.7 vs 0.65), so an ambiguous Roman sentence now resolves to Urdu. That is
+ * a deliberate default: Urdu is a primary language for this project, and mis-answering an Urdu
+ * question in Hindi is worse than the reverse. Text in Devanagari or Urdu script is unaffected,
+ * because those are decided by script detection, not by these markers.
+ */
 export const ROMAN_URDU =
-  /(?<![\p{L}\p{M}])(acha|achha|mujhe|mujhy|samjho|samjhao|batao|bataiye|karo|karna|kyun|kyunki|kaise|nahi|nahin|hain|hoga|thoda|yeh|bhi|aap|tum|aur|bhai|yar|wala|matlab)(?![\p{L}\p{M}])/iu;
+  /(?<![\p{L}\p{M}])(acha|achha|mujhe|mujhy|samjho|samjhao|batao|bataiye|karo|karna|kyun|kyunki|kaise|nahi|nahin|hain|hoga|thoda|yeh|bhi|aap|tum|aur|bhai|yar|wala|matlab|kya|hai|hal|ka|ki|ke)(?![\p{L}\p{M}])/iu;
 
 /** Roman Hindi cue words. */
 export const ROMAN_HINDI =
@@ -204,7 +218,11 @@ function functionWordSignals(text: string): LanguageSignal[] {
   for (const [code, words] of LATIN_FUNCTION_WORDS) {
     let matches = 0;
     for (const word of words) if (tokens.has(word)) matches += 1;
-    if (matches > 0) out.push(sig(code, 'function-words', Math.min(matches / 2, 1) * 0.95));
+    // One precise function word ("nedir", "comment") is stronger evidence than
+    // one shared diacritic ("ü" also belongs to German); several matches remain
+    // decisive exactly as before. (matches + 1) / 3: 1 word -> 0.63 (> 0.60
+    // diacritic), 2+ words -> 0.95, unchanged from the old mapping.
+    if (matches > 0) out.push(sig(code, 'function-words', Math.min((matches + 1) / 3, 1) * 0.95));
   }
   // Best-supported language first so the highest-confidence candidate wins.
   return out.sort((a, b) => b.weight - a.weight);

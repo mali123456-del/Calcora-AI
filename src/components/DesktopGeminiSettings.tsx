@@ -61,7 +61,7 @@ export const DesktopGeminiSettings: React.FC = () => {
       {status?.secureStorageAvailable ? <form onSubmit={save} className="flex flex-col sm:flex-row gap-2">
         <label className="sr-only" htmlFor="desktop-gemini-key">Gemini API key</label>
         <input id="desktop-gemini-key" type="password" autoComplete="new-password" value={key} onChange={(event) => setKey(event.target.value)} maxLength={256} placeholder="Paste Gemini API key" className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-        <button type="submit" disabled={busy || !key.trim()} className="rounded-lg bg-cyan-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save encrypted key'}</button>
+        <button type="submit" disabled={busy || !key.trim()} className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save encrypted key'}</button>
         {status?.managedByDesktop && <button type="button" onClick={() => void clear()} disabled={busy} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-xs font-bold disabled:opacity-50">Remove key</button>}
       </form> : <p className="text-[11px] text-amber-700 dark:text-amber-300">No key was stored. Configure Gemini through a secure OS credential backend or server environment instead.</p>}
       {message && <p role="status" aria-live="polite" className="text-[11px] text-cyan-700 dark:text-cyan-300">{message}</p>}

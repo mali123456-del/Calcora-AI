@@ -144,7 +144,7 @@ function RecognitionOutcome({ result, onUse }: { result: RecognitionResult; onUs
             {result.message}
           </div>
           {result.deterministic.steps.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+            <ul className="mt-2 space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
               {result.deterministic.steps.map((step, index) => <li key={index}>• {step}</li>)}
             </ul>
           )}
@@ -295,30 +295,30 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
   return <div className="space-y-5 animate-in fade-in duration-300">
     <section className="rounded-[28px] overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 text-white shadow-2xl">
       <div className="p-6 sm:p-8 bg-[radial-gradient(circle_at_10%_0%,rgba(6,182,212,.22),transparent_35%),radial-gradient(circle_at_90%_10%,rgba(139,92,246,.18),transparent_32%)]">
-        <div className="flex flex-wrap items-center gap-2"><span className="px-2.5 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300 text-[10px] font-black uppercase tracking-wider"><Sparkles className="inline w-3 h-3 mr-1"/> Multimodal Math Studio</span><span className="text-[10px] text-slate-500">Input → Understand → Solve → Verify</span></div>
+        <div className="flex flex-wrap items-center gap-2"><span className="px-2.5 py-1 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-300 text-[11px] font-black uppercase tracking-wider"><Sparkles className="inline w-3 h-3 mr-1"/> Multimodal Math Studio</span><span className="text-[11px] text-slate-500">Input → Understand → Solve → Verify</span></div>
         <h1 className="mt-4 text-3xl sm:text-4xl font-black tracking-tight">Bring a math problem into Calcora.</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Use browser-supported voice dictation or local PDF text extraction. Image and handwriting recognition are unavailable until a real provider is configured.</p>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-white/10">
-        {tabs.map(([id,Icon,title,desc]) => <button key={id} onClick={()=>setMode(id)} className={`p-4 text-left border-r border-white/10 last:border-r-0 transition ${mode===id?'bg-cyan-400/10':'hover:bg-white/5'}`}><Icon className={`w-5 h-5 ${mode===id?'text-cyan-300':'text-slate-400'}`} /><div className="mt-2 text-xs font-black">{title}</div><div className="mt-1 text-[9px] text-slate-500">{desc}</div></button>)}
+        {tabs.map(([id,Icon,title,desc]) => <button key={id} onClick={()=>setMode(id)} className={`p-4 text-left border-r border-white/10 last:border-r-0 transition ${mode===id?'bg-cyan-400/10':'hover:bg-white/5'}`}><Icon className={`w-5 h-5 ${mode===id?'text-cyan-300':'text-slate-400'}`} /><div className="mt-2 text-xs font-black">{title}</div><div className="mt-1 text-[11px] text-slate-500">{desc}</div></button>)}
       </div>
     </section>
 
     <section className="grid grid-cols-1 lg:grid-cols-5 gap-4">
       <div className="lg:col-span-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-        {mode==='scan' && <div><div className="flex items-center gap-2"><Camera className="w-4 h-4 text-cyan-500"/><h2 className="text-sm font-black">Camera / Image Scanner</h2></div><label className="mt-4 min-h-64 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-cyan-400/60 transition flex flex-col items-center justify-center cursor-pointer text-center p-6"><input type="file" accept="image/*" capture="environment" className="hidden" onChange={e=>{const f=e.target.files?.[0];setFileName(f?.name||'');void runImageRecognition(f);}} /><UploadCloud className="w-9 h-9 text-cyan-500"/><div className="mt-3 text-sm font-black">Select a math image</div><div className="mt-1 text-[10px] text-slate-500">JPG / PNG · stays on this device</div>{fileName&&<div className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs"><ImageIcon className="w-4 h-4"/>{fileName}</div>}</label>
+        {mode==='scan' && <div><div className="flex items-center gap-2"><Camera className="w-4 h-4 text-cyan-500"/><h2 className="text-sm font-black">Camera / Image Scanner</h2></div><label className="mt-4 min-h-64 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-cyan-400/60 transition flex flex-col items-center justify-center cursor-pointer text-center p-6"><input type="file" accept="image/*" capture="environment" className="hidden" onChange={e=>{const f=e.target.files?.[0];setFileName(f?.name||'');void runImageRecognition(f);}} /><UploadCloud className="w-9 h-9 text-cyan-500"/><div className="mt-3 text-sm font-black">Select a math image</div><div className="mt-1 text-[11px] text-slate-500">JPG / PNG · stays on this device</div>{fileName&&<div className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs"><ImageIcon className="w-4 h-4"/>{fileName}</div>}</label>
           {scanState.busy && <div role="status" aria-live="polite" className="mt-3 flex items-center gap-2 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/40 p-3 text-xs text-cyan-700 dark:text-cyan-300"><Loader2 className="w-4 h-4 animate-spin"/>Reading the image…</div>}
           {scanState.result && <RecognitionOutcome result={scanState.result} onUse={() => scanState.result?.text && onAskTutorWithPrompt(scanState.result.text)} />}
         </div>}
 
-        {mode==='voice' && <div><div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2"><Mic className="w-4 h-4 text-violet-500"/><h2 className="text-sm font-black">Voice Math</h2></div><label className="ml-auto flex items-center gap-2 text-xs text-slate-500">Speech language<select aria-label="Speech recognition language" value={voiceLanguage} onChange={event=>setVoiceLanguage(event.target.value as 'auto'|'en'|'ur')} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs"><option value="auto">Browser language</option><option value="en">English</option><option value="ur">Urdu</option></select></label></div><button type="button" onClick={startVoice} aria-pressed={listening} className={`mt-6 mx-auto w-28 h-28 rounded-full flex flex-col items-center justify-center border-4 ${listening?'border-red-400 bg-red-500/10':'border-violet-400/30 bg-violet-500/10'} transition`}><>{listening?<MicOff className="w-7 h-7 text-red-400"/>:<Mic className="w-7 h-7 text-violet-400"/>}</><span className="mt-2 text-[10px] font-black">{listening?'Stop listening':'Start voice'}</span></button><textarea aria-label="Math voice transcript" value={voiceText} onChange={e=>onVoiceTextEdited(e.target.value)} placeholder="Transcript appears here; you can also type a math request…" className="mt-6 w-full min-h-28 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-sm outline-none focus:border-violet-400" />{voiceError&&<p role="alert" className="mt-2 text-xs text-rose-600 dark:text-rose-300">{voiceError}</p>}{voiceVerdict && voiceVerdict.message && <p role="status" className={`mt-2 rounded-xl border p-3 text-xs ${voiceVerdict.status === 'ready' ? 'border-emerald-300/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-300/40 bg-amber-500/5 text-amber-700 dark:text-amber-200'}`}>{voiceVerdict.message}</p>}<button type="button" disabled={voiceVerdict?.status !== 'ready'} onClick={()=>voiceVerdict?.prompt && onAskTutorWithPrompt(voiceVerdict.prompt)} className="mt-3 w-full py-2.5 rounded-xl bg-violet-600 text-white text-xs font-black hover:bg-violet-500 disabled:opacity-50">Send transcript to Tutor</button></div>}
+        {mode==='voice' && <div><div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-2"><Mic className="w-4 h-4 text-cyan-500"/><h2 className="text-sm font-black">Voice Math</h2></div><label className="ml-auto flex items-center gap-2 text-xs text-slate-500">Speech language<select aria-label="Speech recognition language" value={voiceLanguage} onChange={event=>setVoiceLanguage(event.target.value as 'auto'|'en'|'ur')} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs"><option value="auto">Browser language</option><option value="en">English</option><option value="ur">Urdu</option></select></label></div><button type="button" onClick={startVoice} aria-pressed={listening} className={`mt-6 mx-auto w-28 h-28 rounded-full flex flex-col items-center justify-center border-4 ${listening?'border-red-400 bg-red-500/10':'border-cyan-400/30 bg-cyan-500/10'} transition`}><>{listening?<MicOff className="w-7 h-7 text-red-400"/>:<Mic className="w-7 h-7 text-cyan-400"/>}</><span className="mt-2 text-[11px] font-black">{listening?'Stop listening':'Start voice'}</span></button><textarea aria-label="Math voice transcript" value={voiceText} onChange={e=>onVoiceTextEdited(e.target.value)} placeholder="Transcript appears here; you can also type a math request…" className="mt-6 w-full min-h-28 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-sm outline-none focus:border-cyan-400" />{voiceError&&<p role="alert" className="mt-2 text-xs text-rose-600 dark:text-rose-300">{voiceError}</p>}{voiceVerdict && voiceVerdict.message && <p role="status" className={`mt-2 rounded-xl border p-3 text-xs ${voiceVerdict.status === 'ready' ? 'border-emerald-300/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-300/40 bg-amber-500/5 text-amber-700 dark:text-amber-200'}`}>{voiceVerdict.message}</p>}<button type="button" disabled={voiceVerdict?.status !== 'ready'} onClick={()=>voiceVerdict?.prompt && onAskTutorWithPrompt(voiceVerdict.prompt)} className="mt-3 w-full py-2.5 rounded-xl bg-cyan-700 text-white text-xs font-black hover:bg-cyan-800 disabled:opacity-50">Send transcript to Tutor</button></div>}
 
-        {mode==='ink' && <div><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><PenLine className="w-4 h-4 text-cyan-500"/><h2 className="text-sm font-black">Digital Ink Board</h2></div><div className="flex gap-2"><button type="button" onClick={()=>{clearCanvas();setInkState({busy:false,result:null});}} className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800"><Trash2 className="inline w-3 h-3 mr-1"/>Clear</button><button type="button" onClick={()=>void runInkRecognition()} disabled={!inkActive||inkState.busy} className="text-[10px] px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 font-black disabled:opacity-50"><Sparkles className="inline w-3 h-3 mr-1"/>Recognize</button></div></div><canvas aria-label="Math handwriting canvas" ref={canvasRef} width={900} height={430} onPointerDown={()=>!inkActive&&prepareCanvas()} className="mt-4 w-full h-[320px] rounded-2xl border border-slate-300 dark:border-slate-700 bg-white cursor-crosshair touch-none"/>{inkState.busy && <div role="status" aria-live="polite" className="mt-3 flex items-center gap-2 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/40 p-3 text-xs text-cyan-700 dark:text-cyan-300"><Loader2 className="w-4 h-4 animate-spin"/>Reading the handwriting…</div>}{inkState.result && <RecognitionOutcome result={inkState.result} onUse={() => inkState.result?.text && onAskTutorWithPrompt(inkState.result.text)} />}</div>}
+        {mode==='ink' && <div><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><PenLine className="w-4 h-4 text-cyan-500"/><h2 className="text-sm font-black">Digital Ink Board</h2></div><div className="flex gap-2"><button type="button" onClick={()=>{clearCanvas();setInkState({busy:false,result:null});}} className="text-[11px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800"><Trash2 className="inline w-3 h-3 mr-1"/>Clear</button><button type="button" onClick={()=>void runInkRecognition()} disabled={!inkActive||inkState.busy} className="text-[11px] px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 font-black disabled:opacity-50"><Sparkles className="inline w-3 h-3 mr-1"/>Recognize</button></div></div><canvas aria-label="Math handwriting canvas" ref={canvasRef} width={900} height={430} onPointerDown={()=>!inkActive&&prepareCanvas()} className="mt-4 w-full h-[320px] rounded-2xl border border-slate-300 dark:border-slate-700 bg-white cursor-crosshair touch-none"/>{inkState.busy && <div role="status" aria-live="polite" className="mt-3 flex items-center gap-2 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/40 p-3 text-xs text-cyan-700 dark:text-cyan-300"><Loader2 className="w-4 h-4 animate-spin"/>Reading the handwriting…</div>}{inkState.result && <RecognitionOutcome result={inkState.result} onUse={() => inkState.result?.text && onAskTutorWithPrompt(inkState.result.text)} />}</div>}
 
         {mode==='files' && <div>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-amber-500"/><h2 className="text-sm font-black">PDF Document Reader</h2></div>
-            {pdf.status!=='idle' && <button onClick={() => { pdf.reset(); clearActiveDocument(); setSelectedPages([]); }} className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"><X className="inline w-3 h-3 mr-1"/>Clear</button>}
+            {pdf.status!=='idle' && <button onClick={() => { pdf.reset(); clearActiveDocument(); setSelectedPages([]); }} className="text-[11px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"><X className="inline w-3 h-3 mr-1"/>Clear</button>}
           </div>
 
           <label className="mt-4 min-h-56 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400/60 transition flex flex-col items-center justify-center cursor-pointer text-center p-6">
@@ -331,7 +331,7 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
             />
             <UploadCloud className="w-9 h-9 text-amber-500"/>
             <div className="mt-3 text-sm font-black">Select a PDF to read</div>
-            <div className="mt-1 text-[10px] text-slate-500">
+            <div className="mt-1 text-[11px] text-slate-500">
               Text is extracted on this device. Nothing is uploaded.
               <br/>Up to {MAX_PDF_PAGES} pages, {MAX_PDF_BYTES / (1024 * 1024)} MB.
             </div>
@@ -386,7 +386,7 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
 
                 {pdf.result.pages.length > 1 && !pdf.result.needsOcr && (
                   <div className="mt-3">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Pages available to the Tutor</div>
+                    <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">Pages available to the Tutor</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {pdf.result.pages.map((page) => {
                         const active = selectedPages.length === 0 || selectedPages.includes(page.pageNumber);
@@ -404,7 +404,7 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
                                   : [...current, page.pageNumber].sort((a, b) => a - b),
                               );
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition ${
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black border transition ${
                               active
                                 ? 'bg-amber-500/15 border-amber-400/60 text-amber-600 dark:text-amber-300'
                                 : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
@@ -415,7 +415,7 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
                         );
                       })}
                     </div>
-                    <div className="mt-1.5 text-[10px] text-slate-400">
+                    <div className="mt-1.5 text-[11px] text-slate-400">
                       {selectedPages.length === 0
                         ? `All ${pdf.result.pages.length} pages are shared.`
                         : `${selectedPages.length} of ${pdf.result.pages.length} pages shared.`}
@@ -426,7 +426,7 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
                 {pdf.result.warnings.length > 0 && (
                   <ul className="mt-2 space-y-1">
                     {pdf.result.warnings.map((w) => (
-                      <li key={w} className="text-[10px] text-slate-500 dark:text-slate-400">• {w}</li>
+                      <li key={w} className="text-[11px] text-slate-500 dark:text-slate-400">• {w}</li>
                     ))}
                   </ul>
                 )}
@@ -437,12 +437,12 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
                   <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
                     <ScrollText className="w-4 h-4 text-slate-500"/>
                     <span className="text-[11px] font-black">Extracted text</span>
-                    <span className="ml-auto text-[10px] text-slate-400">Pages 1–{pdf.result.pageCount}</span>
+                    <span className="ml-auto text-[11px] text-slate-400">Pages 1–{pdf.result.pageCount}</span>
                   </div>
                   <div className="max-h-72 overflow-y-auto p-4 space-y-3">
                     {pdf.result.pages.map((page) => (
                       <div key={page.pageNumber}>
-                        <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Page {page.pageNumber}</div>
+                        <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">Page {page.pageNumber}</div>
                         <pre className="mt-1 text-[11px] leading-relaxed whitespace-pre-wrap break-words text-slate-700 dark:text-slate-300 font-mono">
                           {page.text || <span className="italic text-slate-400">No selectable text on this page.</span>}
                         </pre>
@@ -476,9 +476,9 @@ export const MultimodalMathStudio: React.FC<Props> = ({ onAskTutorWithPrompt, on
           )}
         </div>}
       </div>
-      <aside className="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-cyan-500/10 to-violet-500/10 p-5">
-        <div className="text-sm font-black">Current input capabilities</div><div className="mt-4 space-y-2">{['PDF text extraction runs locally when selectable text exists','Voice transcripts are sanitized and checked before reaching the Tutor','Image and handwriting recognition run only when a provider is configured','Recognized math is re-solved by Calcora’s deterministic engine before it is shown'].map((x,i)=><div key={x} className="flex items-center gap-3 p-3 rounded-xl bg-white/70 dark:bg-slate-950/50 border border-slate-200/70 dark:border-slate-800"><span className="w-6 h-6 rounded-full bg-cyan-500/10 text-cyan-500 grid place-items-center text-[10px] font-black">{i+1}</span><span className="text-[10px] font-bold">{x}</span></div>)}</div>
-        <div className="mt-3 text-[9px] leading-4 text-slate-500">No OCR or vision provider ships with Calcora, so photo and handwriting recognition report an honest unavailable state rather than a guess. When a provider is registered its transcript is treated as a proposal: Calcora's deterministic engine re-solves it before any answer is shown. Voice transcripts that contain no math are reported instead of forwarded.</div>
+      <aside className="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-cyan-500/10 to-cyan-500/10 p-5">
+        <div className="text-sm font-black">Current input capabilities</div><div className="mt-4 space-y-2">{['PDF text extraction runs locally when selectable text exists','Voice transcripts are sanitized and checked before reaching the Tutor','Image and handwriting recognition run only when a provider is configured','Recognized math is re-solved by Calcora’s deterministic engine before it is shown'].map((x,i)=><div key={x} className="flex items-center gap-3 p-3 rounded-xl bg-white/70 dark:bg-slate-950/50 border border-slate-200/70 dark:border-slate-800"><span className="w-6 h-6 rounded-full bg-cyan-500/10 text-cyan-500 grid place-items-center text-[11px] font-black">{i+1}</span><span className="text-[11px] font-bold">{x}</span></div>)}</div>
+        <div className="mt-3 text-[11px] leading-4 text-slate-500">No OCR or vision provider ships with Calcora, so photo and handwriting recognition report an honest unavailable state rather than a guess. When a provider is registered its transcript is treated as a proposal: Calcora's deterministic engine re-solves it before any answer is shown. Voice transcripts that contain no math are reported instead of forwarded.</div>
 
       </aside>
     </section>

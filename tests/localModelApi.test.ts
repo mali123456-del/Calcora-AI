@@ -25,13 +25,17 @@ async function main() {
   process.env.CALCORA_DESKTOP = '1';
   process.env.CALCORA_ALLOW_PUBLIC_GEMINI = 'false';
   process.env.CALCORA_ENABLE_INTELLIGENCE_SYNC = 'false';
-  process.env.CALCORA_LLAMA_CLI_PATH = '';
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'calcora-model-api-test-'));
   const modelsDirectory = path.join(temporaryRoot, 'models');
   await mkdir(modelsDirectory);
   await writeFile(path.join(modelsDirectory, 'qwen2.5-1.5b-instruct-q4_k_m.gguf'), 'test-model-general');
   await writeFile(path.join(modelsDirectory, 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'), 'test-model-coding');
   process.env.CALCORA_MODELS_DIR = modelsDirectory;
+  // Point the runtime at a path that does not exist. The runtime now also probes
+  // per-platform well-known locations, so leaving this unset would make the test
+  // depend on whether the host happens to have llama.cpp installed; an explicit
+  // unusable path keeps "no usable runtime" deterministic everywhere.
+  process.env.CALCORA_LLAMA_CLI_PATH = path.join(temporaryRoot, 'llama-cli-not-installed');
 
   let server: Server | undefined;
   try {
@@ -49,13 +53,13 @@ async function main() {
       models: Array<{ id: string; fileName: string; role: string }>;
       diagnostic?: string;
     };
-    assert.equal(status.runtime, 'none', 'this workstation has no configured llama.cpp CLI');
+    assert.equal(status.runtime, 'none', 'a configured-but-unusable llama.cpp CLI must not be reported as a runtime');
     assert.equal(status.runtimeAvailable, false);
     assert.equal(status.models.length, 2, 'model discovery does not depend on an installed inference runtime');
     assert.ok(status.models.some((model) => model.role === 'coding'));
     assert.ok(status.models.some((model) => model.role === 'general'));
     assert.ok(!JSON.stringify(status).includes(process.cwd()), 'the status endpoint does not disclose server paths');
-    assert.match(status.diagnostic ?? '', /llama\.cpp is not configured/i);
+    assert.match(status.diagnostic ?? '', /configured llama\.cpp CLI is (unavailable|missing or not executable)/i);
 
     const selected = status.models[0];
     const tutorResponse = await fetch(`${baseUrl}/api/ai/math`, {
@@ -84,7 +88,7 @@ async function main() {
     assert.equal(tutor.isOfflineFallback, true);
     assert.equal(tutor.meta.responseSource, 'deterministic-fallback');
     assert.equal(tutor.meta.requiresCloudApiKey, false);
-    assert.match(tutor.meta.providerMessage ?? '', /llama\.cpp is not configured/i);
+    assert.match(tutor.meta.providerMessage ?? '', /configured llama\.cpp CLI is (unavailable|missing or not executable)/i);
     assert.doesNotMatch(tutor.answer, /Gemini.*required|requires.*API key/i);
 
     const invalidModelResponse = await fetch(`${baseUrl}/api/ai/math`, {

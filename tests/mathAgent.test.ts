@@ -173,4 +173,72 @@ for (const key of ['success', 'goal', 'steps', 'deterministic', 'verification', 
 }
 check(Array.isArray(shape.steps), 'steps is an array');
 
+// ---------------------------------------------------------------------------
+// 11. Derivative goals are computed SYMBOLICALLY and independently spot-checked.
+// ---------------------------------------------------------------------------
+// The historical behaviour evaluated the expression as a value or declined the
+// goal outright. A derivative must produce f'(x), verify it against a central
+// difference (a different algorithm from the symbolic derivation), and never
+// render the false equation "x^2 = 2x".
+const derivative = await runMathAgent({ goal: 'Find the derivative of x^2' });
+check(
+  derivative.deterministic?.tool === 'derivative',
+  `derivative goals must use the derivative tool, got ${String(derivative.deterministic?.tool)} (success=${derivative.success}, explanation=${derivative.explanation.slice(0, 120)})`,
+);
+check(derivative.deterministic?.result === '2x', `d/dx(x^2) must be 2x, got ${String(derivative.deterministic?.result)}`);
+check(
+  derivative.verification.status === 'PASS',
+  `the symbolic derivative must pass the spot-check, got ${derivative.verification.status} (${derivative.verification.reason})`,
+);
+check(
+  derivative.verification.method === 'spot-check',
+  `the derivative check must be a spot-check, got ${derivative.verification.method}`,
+);
+check(
+  /d\/dx\(x\^2\) = 2x/.test(derivative.explanation),
+  `the explanation must render d/dx(x^2) = 2x, got: ${derivative.explanation.split('\n')[0]}`,
+);
+check(!/x\^2 = 2x/.test(derivative.explanation), 'the false equation "x^2 = 2x" must never be shown');
+
+const ddx = await runMathAgent({ goal: 'd/dx(x^3 + 2x)' });
+check(ddx.deterministic?.result === '3x^2 + 2', `d/dx(x^3 + 2x) must be 3x^2 + 2, got ${String(ddx.deterministic?.result)}`);
+check(
+  ddx.verification.status === 'PASS',
+  `d/dx(x^3 + 2x) must verify, got ${ddx.verification.status} (${ddx.verification.reason})`,
+);
+
+// An unsupported form must decline without claiming a derivative function: a
+// labelled point estimate is never presented as f'(x).
+const absDerivative = await runMathAgent({ goal: 'Find the derivative of abs(x)' });
+check(absDerivative.deterministic === null, 'an unsupported derivative must not produce a claimed derivative');
+check(absDerivative.verification.status !== 'PASS', 'an unsupported derivative must never report PASS');
+check(
+  /abs|not supported|symbolic/i.test(absDerivative.explanation),
+  `the unsupported form is explained honestly, got: ${absDerivative.explanation.slice(0, 200)}`,
+);
+
+// The verifier must be able to FAIL: an injected wrong derivative is caught.
+const wrongDerivative = await runMathAgentWithEngine({
+  goal: 'Find the derivative of x^2',
+  engine: {
+    derivative: () => ({
+      success: true,
+      toolName: 'derivative',
+      expression: 'x^2',
+      result: '3x',
+      metadata: { symbolicSupported: true },
+      steps: ['injected wrong derivative'],
+    }) as never,
+  },
+});
+check(wrongDerivative.deterministic?.result === '3x', 'the injected derivative is reported verbatim');
+check(
+  wrongDerivative.verification.status === 'FAIL',
+  `a wrong derivative must FAIL the spot-check, got ${wrongDerivative.verification.status} (${wrongDerivative.verification.reason})`,
+);
+check(
+  /disagree|vs|mismatch/i.test(wrongDerivative.verification.reason),
+  `FAIL must explain the disagreement, got: ${wrongDerivative.verification.reason}`,
+);
+
 console.log('Math agent tests passed');

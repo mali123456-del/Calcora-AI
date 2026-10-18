@@ -2,19 +2,6 @@ import type { AIMessage } from '../types';
 import type { DifficultyLevel, MathTopic, TutorMode } from '../utils/aiTutor';
 
 export type TutorLearningLevel = DifficultyLevel;
-export type FunctionalTutorMode = TutorMode;
-export type MathProblemContext = TutorProblemContext;
-export type UserLearningLevel = TutorLearningState;
-
-export interface TutorQuizItemData {
-  question: string;
-  options?: string[];
-  correctAnswer: string;
-  userAnswer?: string;
-  isCorrect?: boolean;
-  hint?: string;
-  explanation: string;
-}
 
 export interface TutorProblemContext {
   rawProblem: string;
@@ -102,8 +89,24 @@ export function loadTutorConversationState(): TutorConversationState {
   }
 }
 
-export function appendTutorMessage(state: TutorConversationState, message: AIMessage): TutorConversationState {
-  const messages = [...state.messages, message].slice(-MAX_MESSAGES);
+export function appendTutorMessage(
+  state: TutorConversationState,
+  message: Partial<AIMessage> & Pick<AIMessage, 'role' | 'content'>,
+): TutorConversationState {
+  const fullMessage: AIMessage = {
+    id: message.id ?? `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    role: message.role,
+    content: message.content,
+    timestamp: message.timestamp ?? Date.now(),
+    steps: message.steps,
+    verificationNote: message.verificationNote,
+    formula: message.formula,
+    expression: message.expression,
+    result: message.result,
+    isVerified: message.isVerified,
+    isError: message.isError,
+  };
+  const messages = [...state.messages, fullMessage].slice(-MAX_MESSAGES);
   const nextContext = state.problemContext
     ? { ...state.problemContext, messageCount: messages.length, updatedAt: Date.now() }
     : state.problemContext;
@@ -267,4 +270,17 @@ export function exportTutorSessionMarkdown(state: TutorConversationState): strin
     if (message.steps?.length) lines.push(...message.steps.map((step, i) => `${i + 1}. ${step}`), '');
   }
   return lines.join('\n');
+}
+
+export type FunctionalTutorMode = TutorMode;
+export type MathProblemContext = TutorProblemContext;
+export type UserLearningLevel = TutorLearningLevel;
+export interface TutorQuizItemData {
+  question: string;
+  options?: string[];
+  answerIndex?: number;
+  correctAnswer?: string;
+  explanation: string;
+  userAnswer?: string;
+  isCorrect?: boolean;
 }

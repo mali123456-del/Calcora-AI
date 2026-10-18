@@ -54,7 +54,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                 <h2 className="font-display-math font-bold text-lg text-white">
                   Mathematical Engine Verification Suite
                 </h2>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="text-[11px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   Phase 24
                 </span>
               </div>
@@ -157,7 +157,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-[11px] text-slate-400">Actual: {test.actual}</span>
                 <span
-                  className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
+                  className={`px-2 py-0.5 text-[11px] font-bold uppercase rounded ${
                     test.passed
                       ? 'bg-emerald-500/20 text-emerald-400'
                       : 'bg-rose-500/20 text-rose-400'

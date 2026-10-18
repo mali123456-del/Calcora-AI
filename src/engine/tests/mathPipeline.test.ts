@@ -31,6 +31,7 @@ import {
   toolSolveEquation,
   executeMathTool,
   MathToolResult,
+  type MathToolName,
 } from '../toolLayer';
 
 const EPSILON = 1e-7;
@@ -643,7 +644,7 @@ describe('Deterministic Pipeline: Algebraic Equation Solving', () => {
 // ============================================================================
 describe('Deterministic Pipeline: Tool Layer & Authoritative Verification Contract', () => {
   it('toolCalculate returns MathToolResult with authoritative verification badge', () => {
-    const res: MathToolResult = toolCalculate('2 + 3 * 4');
+    const res: MathToolResult = toolCalculate({ expression: '2 + 3 * 4' });
     assert.equal(res.success, true);
     assert.equal(res.toolName, 'calculate');
     assert.equal(res.result, '14');
@@ -654,19 +655,28 @@ describe('Deterministic Pipeline: Tool Layer & Authoritative Verification Contra
   });
 
   it('toolCalculate preserves angle mode for trigonometric calculations', () => {
-    const degRes: MathToolResult = toolCalculate('sin(90)', 'DEG');
+    const degRes: MathToolResult = toolCalculate({ expression: 'sin(90)', angleMode: 'DEG' });
     assert.equal(degRes.success, true);
     assert.equal(degRes.result, '1');
-    assert.ok(degRes.domain?.includes('DEG'));
 
-    const radRes: MathToolResult = toolCalculate('sin(pi / 2)', 'RAD');
+    // `domain` is a vestigial field on MathToolResult that no product code reads,
+    // so the angle-mode contract is asserted behaviourally instead: the same
+    // expression must produce a different answer in radians (sin(90 rad) is
+    // cos(90°) ≈ 0.894), and pi/2 must be exactly 1 in radians.
+    const radDeg: MathToolResult = toolCalculate({ expression: 'sin(90)', angleMode: 'RAD' });
+    assert.equal(radDeg.success, true);
+    assert.ok(
+      Number(radDeg.result) !== 1,
+      `the same expression in RAD mode must not return the DEG answer (got ${radDeg.result})`,
+    );
+
+    const radRes: MathToolResult = toolCalculate({ expression: 'sin(pi / 2)', angleMode: 'RAD' });
     assert.equal(radRes.success, true);
-    assert.equal(radRes.result, '1');
-    assert.ok(radRes.domain?.includes('RAD'));
+    assert.ok(Math.abs(Number(radRes.result) - 1) < 1e-9, `sin(pi/2) in radians is 1 (got ${radRes.result})`);
   });
 
   it('toolSolveEquation returns MathToolResult with authoritative verification badge', () => {
-    const res: MathToolResult = toolSolveEquation('2x + 5 = 15');
+    const res: MathToolResult = toolSolveEquation({ equation: '2x + 5 = 15' });
     assert.equal(res.success, true);
     assert.equal(res.toolName, 'solveEquation');
     assert.ok(res.result.includes('5'));
@@ -675,18 +685,21 @@ describe('Deterministic Pipeline: Tool Layer & Authoritative Verification Contra
     assert.ok(res.derivationSteps.length > 0);
   });
 
-  it('executeMathTool dispatches calculate and solveEquation consistently', () => {
-    const calcResult = executeMathTool('calculate', { expression: '15 / 3 + 2' });
+  it('executeMathTool dispatches calculate and solveEquation consistently', async () => {
+    const calcResult = await executeMathTool('calculate', { expression: '15 / 3 + 2' });
     assert.equal(calcResult.success, true);
     assert.equal(calcResult.result, '7');
 
-    const eqResult = executeMathTool('solveEquation', { equation: 'x^2 - 5x + 6 = 0' });
+    const eqResult = await executeMathTool('solveEquation', { equation: 'x^2 - 5x + 6 = 0' });
     assert.equal(eqResult.success, true);
     assert.ok(eqResult.result.includes('2') && eqResult.result.includes('3'));
   });
 
-  it('executeMathTool rejects invalid tool requests safely', () => {
-    const unknownRes = executeMathTool('nonExistentTool', {});
+  it('executeMathTool rejects invalid tool requests safely', async () => {
+    // The dispatcher is asynchronous and rejects an unknown tool name through the
+    // same `fail()` path as a bad argument, so an unknown name can never reach a
+    // real tool.
+    const unknownRes = await executeMathTool('nonExistentTool' as MathToolName, {});
     assert.equal(unknownRes.success, false);
     assert.ok(/unknown.*tool/i.test(unknownRes.error || ''));
   });
@@ -702,7 +715,7 @@ describe('Deterministic Pipeline: Tool Layer & Authoritative Verification Contra
 
     for (const { expr, expected } of groundTruthCases) {
       const direct = calculateExpression(expr);
-      const tool = toolCalculate(expr);
+      const tool = toolCalculate({ expression: expr });
       assert.equal(direct.value, expected);
       assert.equal(Number(tool.result), expected);
       assert.equal(tool.verificationBadge.confidence, 1.0);

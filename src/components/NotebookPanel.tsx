@@ -109,7 +109,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5" data-testid="notebook-panel">
       <header className="flex flex-wrap items-center gap-3">
-        <BookOpen className="w-5 h-5 text-violet-500" aria-hidden="true" />
+        <BookOpen className="w-5 h-5 text-cyan-500" aria-hidden="true" />
         <h1 className="text-xl font-black">Notebook</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400 w-full sm:w-auto">
           Persistent workspace for your problems, calculations and Tutor work. Entries are
@@ -119,7 +119,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
 
       <section className="flex flex-wrap gap-2 items-end" aria-label="Create notebook">
         <div className="flex-1 min-w-48">
-          <label htmlFor="notebook-title" className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
+          <label htmlFor="notebook-title" className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">
             New notebook title
           </label>
           <input
@@ -127,13 +127,13 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="e.g. Quadratics revision"
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm outline-none focus:border-violet-400"
+            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm outline-none focus:border-cyan-400"
           />
         </div>
         <button
           type="button"
           onClick={handleCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white hover:bg-violet-500"
+          className="inline-flex items-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-xs font-black text-white hover:bg-cyan-800"
         >
           <Plus className="w-4 h-4" aria-hidden="true" />Create notebook
         </button>
@@ -161,7 +161,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
                 aria-current={nb.id === activeId ? 'true' : undefined}
                 className={`rounded-xl px-3 py-2 text-xs font-bold border ${
                   nb.id === activeId
-                    ? 'border-violet-500 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
                     : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
@@ -196,7 +196,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
               <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 space-y-3" aria-label="Add entry">
                 <div className="flex flex-wrap gap-2">
                   <div>
-                    <label htmlFor="notebook-entry-type" className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Type</label>
+                    <label htmlFor="notebook-entry-type" className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Type</label>
                     <select
                       id="notebook-entry-type"
                       value={entryType}
@@ -207,14 +207,14 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
                     </select>
                   </div>
                   <div className="flex-1 min-w-56">
-                    <label htmlFor="notebook-entry-text" className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Content</label>
+                    <label htmlFor="notebook-entry-text" className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Content</label>
                     <textarea
                       id="notebook-entry-text"
                       value={text}
                       onChange={(event) => setText(event.target.value)}
                       rows={3}
                       placeholder="e.g. 2x + 4 = 10, or your own working"
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono-math outline-none focus:border-violet-400"
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-mono-math outline-none focus:border-cyan-400"
                     />
                   </div>
                 </div>
@@ -222,7 +222,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
                 <button
                   type="button"
                   onClick={handleAddEntry}
-                  className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white hover:bg-violet-500"
+                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-xs font-black text-white hover:bg-cyan-800"
                 >
                   <Save className="w-4 h-4" aria-hidden="true" />Add to notebook
                 </button>
@@ -244,8 +244,8 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400">{entry.type}</span>
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-black ${status.className}`}>
+                            <span className="text-[11px] uppercase tracking-wider text-slate-400">{entry.type}</span>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-black ${status.className}`}>
                               <StatusIcon className="w-3.5 h-3.5" aria-hidden="true" />
                               {entry.verification?.status === 'PASS' ? 'Verified' : entry.verification?.status === 'FAIL' ? 'Verification failed' : 'Not verified'}
                             </span>
@@ -262,7 +262,7 @@ export const NotebookPanel: React.FC<{ onSendToCalculator?: (expression: string)
                             <button
                               type="button"
                               onClick={() => onSendToCalculator(entry.text)}
-                              className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[10px] font-bold"
+                              className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-bold"
                             >
                               To calculator
                             </button>

@@ -218,6 +218,21 @@ interface RatesCachePayload {
 
 let inMemoryRatesCache: RatesCachePayload | null = null;
 let inMemoryHistory: CurrencyHistoryItem[] = [];
+let inMemoryFavoritePairs: Array<[string, string]> = [
+  ['USD', 'PKR'],
+  ['EUR', 'USD'],
+  ['GBP', 'USD'],
+  ['USD', 'AED'],
+  ['SAR', 'PKR'],
+];
+let inMemoryRecentPairs: Array<[string, string]> = [
+  ['USD', 'PKR'],
+  ['EUR', 'USD'],
+  ['GBP', 'USD'],
+  ['USD', 'INR'],
+  ['AED', 'PKR'],
+  ['SAR', 'PKR'],
+];
 
 function isStorageAvailable(): boolean {
   try {
@@ -405,17 +420,13 @@ export class CurrencyRateProvider {
     if (isStorageAvailable()) {
       try {
         const raw = localStorage.getItem(RECENT_PAIRS_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          inMemoryRecentPairs = JSON.parse(raw);
+          return inMemoryRecentPairs;
+        }
       } catch {}
     }
-    return [
-      ['USD', 'PKR'],
-      ['EUR', 'USD'],
-      ['GBP', 'USD'],
-      ['USD', 'INR'],
-      ['AED', 'PKR'],
-      ['SAR', 'PKR'],
-    ];
+    return inMemoryRecentPairs;
   }
 
   public static recordRecentPair(from: string, to: string): void {
@@ -424,6 +435,7 @@ export class CurrencyRateProvider {
     const filtered = current.filter(([f, t]) => !(f === from && t === to));
     filtered.unshift([from, to]);
     const trimmed = filtered.slice(0, 10);
+    inMemoryRecentPairs = trimmed;
 
     if (isStorageAvailable()) {
       try {
@@ -436,20 +448,17 @@ export class CurrencyRateProvider {
     if (isStorageAvailable()) {
       try {
         const raw = localStorage.getItem(FAVORITE_PAIRS_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          inMemoryFavoritePairs = JSON.parse(raw);
+          return inMemoryFavoritePairs;
+        }
       } catch {}
     }
-    return [
-      ['USD', 'PKR'],
-      ['EUR', 'USD'],
-      ['GBP', 'USD'],
-      ['USD', 'AED'],
-      ['SAR', 'PKR'],
-    ];
+    return inMemoryFavoritePairs;
   }
 
   public static toggleFavoritePair(from: string, to: string): boolean {
-    const favorites = this.getFavoritePairs();
+    const favorites = [...this.getFavoritePairs()];
     const idx = favorites.findIndex(([f, t]) => f === from && t === to);
     let isFav = false;
 
@@ -461,6 +470,7 @@ export class CurrencyRateProvider {
       isFav = true;
     }
 
+    inMemoryFavoritePairs = favorites;
     if (isStorageAvailable()) {
       try {
         localStorage.setItem(FAVORITE_PAIRS_KEY, JSON.stringify(favorites));

@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { spawn as spawnChild, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
 import { lstat, realpath, readdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import {
+  describeLocalRuntimeSetup,
+  resolveLocalRuntimeBinary,
+  type ResolvedLocalRuntimeBinary,
+} from './localRuntimePlatform';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import type { LocalModelGenerationRequest, LocalModelOption, LocalModelRole, LocalModelStatus } from '../ai/localModels';
@@ -18,6 +24,46 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 180_000;
 
+/**
+ * Return only the model's generated text from raw llama.cpp stdout.
+ *
+ * The llama.cpp binaries differ in how much chrome they print around the
+ * generation:
+ *   - llama-completion.exe prints the answer plus control markers such as
+ *     "[end of text]";
+ *   - llama-cli.exe wraps everything in an interactive console: a loading
+ *     banner, a "> prompt" echo, a performance line, and "Exiting...".
+ *
+ * When the console performance line ("[ Prompt: ...") is present, the answer
+ * is the text between the prompt echo and that line. Control markers and
+ * ANSI escapes are stripped in every case so callers never see them.
+ */
+function extractGeneratedText(raw: string, prompt: string): string {
+  let text = raw;
+  const statsIndex = text.lastIndexOf('[ Prompt: ');
+  if (statsIndex !== -1) {
+    const head = text.slice(0, statsIndex);
+    const echo = `> ${prompt}`;
+    const echoAt = head.indexOf(echo);
+    if (echoAt !== -1) {
+      text = head.slice(echoAt + echo.length);
+    } else {
+      // Fallback: the console echoes the first line of the prompt after "> ".
+      const lineStart = head.indexOf('\n> ');
+      if (lineStart !== -1) {
+        const after = head.slice(lineStart + 3);
+        const newline = after.indexOf('\n');
+        text = newline === -1 ? '' : after.slice(newline + 1);
+      }
+    }
+  }
+  const ansi = new RegExp(String.fromCharCode(27) + '\\[[0-?]*[ -/]*[@-~]', 'g');
+  return text
+    .replace(ansi, '')
+    .replace(/\[end of text\]|\[end of turn\]/gi, '')
+    .trim();
+}
+
 export class LocalGgufRuntimeError extends Error {
   constructor(message: string) {
     super(message);
@@ -28,6 +74,10 @@ export class LocalGgufRuntimeError extends Error {
 export interface LocalGgufRuntimeOptions {
   modelsDirectory?: string;
   llamaCliPath?: string;
+  /** Test seam for the platform policy; defaults to the running platform. */
+  platform?: string;
+  /** Test seam for well-known location discovery; defaults to the user home. */
+  homeDirectory?: string;
   contextSize?: number;
   threads?: number;
   timeoutMs?: number;
@@ -46,11 +96,10 @@ function configuredModelsDirectory(options: LocalGgufRuntimeOptions): string {
   return path.resolve(configured?.trim() || path.join(appRoot, 'models'));
 }
 
-function configuredLlamaCliPath(options: LocalGgufRuntimeOptions): string | null {
+function configuredLlamaCliPath(options: LocalGgufRuntimeOptions): string | undefined {
   const configured = options.llamaCliPath ?? process.env.CALCORA_LLAMA_CLI_PATH;
-  if (!configured?.trim()) return null;
-  const candidate = configured.trim();
-  return path.isAbsolute(candidate) ? path.normalize(candidate) : null;
+  const trimmed = configured?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function configuredThreads(options: LocalGgufRuntimeOptions): number {
@@ -87,7 +136,24 @@ async function isRegularFile(filePath: string): Promise<boolean> {
 
 export function createLocalGgufRuntime(options: LocalGgufRuntimeOptions = {}) {
   const modelsDirectory = configuredModelsDirectory(options);
-  const llamaCliPath = configuredLlamaCliPath(options);
+  const configuredCliPath = configuredLlamaCliPath(options);
+  const platform = options.platform ?? process.platform;
+  const homeDirectory = options.homeDirectory ?? homedir();
+  /**
+   * The llama.cpp CLI is resolved per platform on every call rather than cached
+   * once at construction: an explicit `CALCORA_LLAMA_CLI_PATH` wins, otherwise the
+   * per-platform well-known locations are probed. Windows looks for
+   * `llama-completion.exe`, macOS and Linux for `llama-completion`, and a
+   * POSIX binary without the executable bit is rejected instead of failing later
+   * with an opaque spawn error.
+   */
+  const resolveLlamaBinary = (): Promise<ResolvedLocalRuntimeBinary | null> =>
+    resolveLocalRuntimeBinary({
+      platform,
+      configuredPath: configuredCliPath,
+      homeDirectory,
+      env: process.env,
+    });
   const contextSize = configuredContextSize(options);
   const threads = configuredThreads(options);
   const timeoutMs = configuredTimeout(options);
@@ -121,19 +187,22 @@ export function createLocalGgufRuntime(options: LocalGgufRuntimeOptions = {}) {
   }
 
   async function getStatus(): Promise<LocalModelStatus> {
-    const [modelResult, runtimeAvailable] = await Promise.all([
+    const [modelResult, llamaBinary] = await Promise.all([
       discoverModels(),
-      llamaCliPath ? isRegularFile(llamaCliPath) : Promise.resolve(false),
+      resolveLlamaBinary(),
     ]);
+    const runtimeAvailable = llamaBinary !== null;
     const diagnostic = !modelResult.available
       ? 'The models directory is unavailable. Set CALCORA_MODELS_DIR to a folder containing GGUF files.'
-      : !llamaCliPath
-        ? 'llama.cpp is not configured. Install it separately, then set CALCORA_LLAMA_CLI_PATH to the absolute path of llama-cli.'
-        : !runtimeAvailable
-          ? 'The configured llama.cpp CLI is unavailable. Check CALCORA_LLAMA_CLI_PATH.'
-          : modelResult.models.length === 0
-            ? 'No GGUF models were found in the configured models directory.'
-            : undefined;
+      : !runtimeAvailable
+        ? configuredCliPath
+          ? platform === 'win32'
+            ? 'The configured llama.cpp CLI is unavailable. Check CALCORA_LLAMA_CLI_PATH.'
+            : 'The configured llama.cpp CLI is missing or not executable. Check CALCORA_LLAMA_CLI_PATH and run `chmod +x` on it.'
+          : describeLocalRuntimeSetup(platform)
+        : modelResult.models.length === 0
+          ? 'No GGUF models were found in the configured models directory.'
+          : undefined;
 
     return {
       runtime: runtimeAvailable ? 'llama.cpp' : 'none',
@@ -147,7 +216,8 @@ export function createLocalGgufRuntime(options: LocalGgufRuntimeOptions = {}) {
   async function generate(request: LocalModelGenerationRequest, signal?: AbortSignal): Promise<string> {
     if (signal?.aborted) throw new LocalGgufRuntimeError('Local model request was cancelled.');
     const status = await getStatus();
-    if (!status.runtimeAvailable || !llamaCliPath) {
+    const llamaBinary = await resolveLlamaBinary();
+    if (!status.runtimeAvailable || !llamaBinary) {
       throw new LocalGgufRuntimeError(status.diagnostic || 'The llama.cpp runtime is unavailable.');
     }
     const selectedModel = status.models.find((model) => model.id === request.modelId);
@@ -217,10 +287,14 @@ export function createLocalGgufRuntime(options: LocalGgufRuntimeOptions = {}) {
       };
 
       try {
-        child = spawnProcess(llamaCliPath, args, {
+        child = spawnProcess(llamaBinary.path, args, {
           shell: false,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
+          // Run from the CLI's own directory so a DLL-backed Windows shim
+          // (llama-completion.exe + llama.dll) and a POSIX build that loads
+          // sibling shared libraries both resolve their dependencies.
+          cwd: path.dirname(llamaBinary.path),
         });
       } catch {
         finish(new LocalGgufRuntimeError('The llama.cpp CLI could not be started.'));
@@ -247,7 +321,7 @@ export function createLocalGgufRuntime(options: LocalGgufRuntimeOptions = {}) {
           finish(new LocalGgufRuntimeError(`llama.cpp exited with code ${String(code ?? 'unknown')}.`));
           return;
         }
-        const answer = stdout.join('').replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim().slice(0, MAX_OUTPUT_CHARS);
+        const answer = extractGeneratedText(stdout.join(''), prompt).slice(0, MAX_OUTPUT_CHARS);
         if (!answer) {
           finish(new LocalGgufRuntimeError('llama.cpp returned an empty response.'));
           return;

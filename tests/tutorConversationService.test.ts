@@ -36,16 +36,6 @@ adaptive = adaptTutorLearningLevel(adaptive, { correct: false });
 adaptive = adaptTutorLearningLevel(adaptive, { correct: false });
 assert.equal(adaptive.learning.level, 'beginner');
 
-state = setTutorMode(adaptive, 'socratic');
-assert.equal(state.mode, 'socratic');
-assert.equal(state.messages.length, 1);
-const exported = exportTutorSessionMarkdown(state);
-assert.ok(exported.includes('# Math Tutor Session'));
-const reset = resetTutorSession(state);
-assert.equal(reset.messages.length, 1);
-console.log('Tutor conversation state tests passed');
-
-
 assert.equal(isTutorFollowUpPrompt('What is the next step?'), true);
 assert.equal(isTutorFollowUpPrompt('Why did we subtract 5?'), true);
 assert.equal(isTutorFollowUpPrompt('Solve 9 * 8'), false);
@@ -59,3 +49,13 @@ assert.equal(continuity.learningLevel, 'beginner');
 const continuityText = formatTutorContinuityContext(continuity);
 assert.ok(continuityText.includes('Active problem: 2x + 5 = 17'));
 assert.ok(continuityText.includes('Follow-up detected: yes'));
+assert.ok(continuityText.includes('Follow-up reason: continuation'));
+
+state = setTutorMode(adaptive, 'socratic');
+assert.equal(state.mode, 'socratic');
+assert.equal(state.messages.length, 1);
+const exported = exportTutorSessionMarkdown(state);
+assert.ok(exported.includes('# Math Tutor Session'));
+const reset = resetTutorSession(state);
+assert.equal(reset.messages.length, 1);
+console.log('Tutor conversation state + continuity tests passed');

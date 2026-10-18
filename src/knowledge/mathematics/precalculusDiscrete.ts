@@ -117,7 +117,10 @@ export const precalculusDiscreteKnowledge: MathKnowledgeItem[] = [
     },
   },
   {
-    id: 'complex-numbers-euler',
+    // Distinct id: advancedTopics.ts already owns `complex-numbers-euler` for
+    // De Moivre's theorem. Two items sharing one id meant KNOWLEDGE_BY_ID kept
+    // only this one and silently dropped the other from id-based lookup.
+    id: 'complex-polar-euler-identity',
     topic: 'Complex Numbers',
     subtopic: 'Complex Arithmetic and Euler\'s Formula',
     level: 'intermediate',

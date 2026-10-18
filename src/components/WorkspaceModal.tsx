@@ -177,7 +177,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <BookMarked className="w-5 h-5 text-indigo-500" />
+            <BookMarked className="w-5 h-5 text-cyan-500" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Workspaces & Notes
             </h3>
@@ -196,7 +196,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
             onClick={() => setActiveTab('workspaces')}
             className={`px-4 py-2 text-xs font-semibold border-b-2 transition-all ${
               activeTab === 'workspaces'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -206,7 +206,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
             onClick={() => setActiveTab('notes')}
             className={`px-4 py-2 text-xs font-semibold border-b-2 transition-all ${
               activeTab === 'notes'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -216,7 +216,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
             onClick={() => setActiveTab('export')}
             className={`px-4 py-2 text-xs font-semibold border-b-2 transition-all ${
               activeTab === 'export'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
@@ -239,7 +239,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                 />
                 <button
                   onClick={handleCreateWorkspace}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                  className="px-4 py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create</span>
@@ -256,7 +256,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                       onClick={() => handleSelectWorkspace(ws)}
                       className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                         isActive
-                          ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 ring-1 ring-indigo-500'
+                          ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/30 ring-1 ring-cyan-500'
                           : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
@@ -266,7 +266,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                             {ws.name}
                           </span>
                           {isActive && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-cyan-700 text-white">
                               Active
                             </span>
                           )}
@@ -312,7 +312,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                 />
                 <button
                   onClick={handleAddNote}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+                  className="px-3.5 py-1.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg text-xs font-semibold shadow-xs"
                 >
                   Save Note
                 </button>
@@ -344,7 +344,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                         {n.content}
                       </p>
-                      <span className="text-[10px] text-slate-400 block pt-1">
+                      <span className="text-[11px] text-slate-400 block pt-1">
                         {new Date(n.timestamp).toLocaleDateString()}
                       </span>
                     </div>
@@ -369,14 +369,14 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                         'text/csv'
                       )
                     }
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
                   >
                     <FileSpreadsheet className="w-5 h-5 text-emerald-500" />
                     <div>
                       <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                         Export as CSV
                       </div>
-                      <div className="text-[10px] text-slate-400">Excel / Spreadsheet</div>
+                      <div className="text-[11px] text-slate-400">Excel / Spreadsheet</div>
                     </div>
                   </button>
 
@@ -388,14 +388,14 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                         'text/plain'
                       )
                     }
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
                   >
                     <FileText className="w-5 h-5 text-sky-500" />
                     <div>
                       <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                         Export as Plain Text
                       </div>
-                      <div className="text-[10px] text-slate-400">Human-readable logs</div>
+                      <div className="text-[11px] text-slate-400">Human-readable logs</div>
                     </div>
                   </button>
                 </div>
@@ -406,23 +406,23 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Calcora Data Controls
                   </h4>
-                  <p className="text-[10px] text-slate-400 mt-1">
+                  <p className="text-[11px] text-slate-400 mt-1">
                     Local-only data export/import. API keys, bearer tokens and credentials are never exported.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => downloadFile(exportCalcoraData(loadCalcoraDataSnapshot()), `calcora-data-${Date.now()}.json`, 'application/json')}
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-white dark:bg-slate-900 text-left"
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-white dark:bg-slate-900 text-left"
                   >
-                    <Download className="w-4 h-4 text-indigo-500 mb-1" />
+                    <Download className="w-4 h-4 text-cyan-500 mb-1" />
                     <div className="text-xs font-semibold">Export Calcora Data</div>
-                    <div className="text-[10px] text-slate-400">History, workspaces & learning state</div>
+                    <div className="text-[11px] text-slate-400">History, workspaces & learning state</div>
                   </button>
-                  <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-white dark:bg-slate-900 text-left cursor-pointer">
+                  <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-white dark:bg-slate-900 text-left cursor-pointer">
                     <Upload className="w-4 h-4 text-amber-500 mb-1" />
                     <div className="text-xs font-semibold">Import Calcora Data</div>
-                    <div className="text-[10px] text-slate-400">Validated JSON only</div>
+                    <div className="text-[11px] text-slate-400">Validated JSON only</div>
                     <input
                       type="file"
                       accept=".json,application/json"
@@ -459,7 +459,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                   >
                     <Trash2 className="w-4 h-4 text-rose-500 mb-1" />
                     <div className="text-xs font-semibold">Delete History</div>
-                    <div className="text-[10px] text-slate-400">Remove saved calculations</div>
+                    <div className="text-[11px] text-slate-400">Remove saved calculations</div>
                   </button>
                   <button
                     onClick={() => {
@@ -472,7 +472,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                   >
                     <Trash2 className="w-4 h-4 text-rose-600 mb-1" />
                     <div className="text-xs font-semibold">Reset Local Calcora Data</div>
-                    <div className="text-[10px] text-slate-400">Explicit confirmation required</div>
+                    <div className="text-[11px] text-slate-400">Explicit confirmation required</div>
                   </button>
                 </div>
               </div>
@@ -490,24 +490,24 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                         'application/json'
                       )
                     }
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
+                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5"
                   >
-                    <Download className="w-5 h-5 text-indigo-500" />
+                    <Download className="w-5 h-5 text-cyan-500" />
                     <div>
                       <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                         Backup Workspace JSON
                       </div>
-                      <div className="text-[10px] text-slate-400">Formulas, notes & state</div>
+                      <div className="text-[11px] text-slate-400">Formulas, notes & state</div>
                     </div>
                   </button>
 
-                  <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5 cursor-pointer">
+                  <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-cyan-500 bg-slate-50 dark:bg-slate-800/40 text-left transition-all flex items-center gap-2.5 cursor-pointer">
                     <Upload className="w-5 h-5 text-amber-500" />
                     <div>
                       <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                         Import Workspace JSON
                       </div>
-                      <div className="text-[10px] text-slate-400">Strict schema validated</div>
+                      <div className="text-[11px] text-slate-400">Strict schema validated</div>
                     </div>
                     <input
                       type="file"

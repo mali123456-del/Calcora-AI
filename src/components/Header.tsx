@@ -1,9 +1,310 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Calcora application shell.
+ *
+ * Two tiers:
+ *   1. identity + global toolbar (search, workspaces, angle mode, memory, audit, theme)
+ *   2. module rail — the 19 navigable modules, grouped by what the user is doing
+ *
+ * Every module stays a real, visible, focusable <button> with a stable `tab-<id>`
+ * id. The packaged smoke test and the browser verifications address those ids
+ * directly, and hiding a module behind a menu would break both the tests and the
+ * rule that no feature may be concealed to simplify the shell.
+ */
 import React from 'react';
-import { Calculator as CalcIcon,Sparkles,Binary,ArrowRightLeft,DollarSign,Sun,Moon,Monitor,CheckCircle2,TrendingUp,BarChart3,Layers,BookOpen,Award,FolderKanban,FunctionSquare,Wrench,Search,LayoutDashboard,Database } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Award,
+  BarChart3,
+  Binary,
+  BookOpen,
+  Calculator as CalcIcon,
+  CheckCircle2,
+  Code2,
+  Database,
+  DollarSign,
+  FolderKanban,
+  FunctionSquare,
+  Layers,
+  LayoutDashboard,
+  Monitor,
+  Moon,
+  Percent,
+  Ruler,
+  ScanLine,
+  Search,
+  Sigma,
+  Sparkles,
+  Sun,
+  Terminal,
+  TrendingUp,
+  Wrench,
+} from 'lucide-react';
 import { ActiveTab, AngleMode, ThemeMode } from '../types';
-interface HeaderProps { activeTab:ActiveTab; setActiveTab:(tab:ActiveTab)=>void; angleMode:AngleMode; setAngleMode:(mode:AngleMode)=>void; theme:ThemeMode; setTheme:(theme:ThemeMode)=>void; hasMemory:boolean; historyCount:number; onOpenVerification:()=>void; onOpenWorkspaces?:()=>void; onOpenCommandPalette?:()=>void; }
-export const Header:React.FC<HeaderProps>=({activeTab,setActiveTab,angleMode,setAngleMode,theme,setTheme,hasMemory,onOpenVerification,onOpenWorkspaces,onOpenCommandPalette})=>{
- const tabs:{id:ActiveTab;label:string;icon:any;isAi?:boolean}[]=[
-  {id:'home',label:'Command Hub',icon:LayoutDashboard},{id:'calculator',label:'Scientific',icon:CalcIcon},{id:'graph',label:'Graphing',icon:TrendingUp},{id:'equations',label:'Equations',icon:Binary},{id:'calculus',label:'Calculus',icon:FunctionSquare},{id:'matrix',label:'Matrix & Vec',icon:Layers},{id:'statistics',label:'Statistics',icon:BarChart3},{id:'datalab',label:'Data Lab',icon:Database},{id:'notebook',label:'Notebook',icon:BookOpen},{id:'engineering',label:'Engineering',icon:Wrench},{id:'programmer',label:'Programmer',icon:Binary},{id:'units',label:'Units',icon:ArrowRightLeft},{id:'finance',label:'Finance',icon:DollarSign},{id:'currency',label:'Currency',icon:ArrowRightLeft},{id:'formulas',label:'Formulas',icon:BookOpen},{id:'practice',label:'Practice Quiz',icon:Award},{id:'ai',label:'AI Tutor',icon:Sparkles,isAi:true}];
- return <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-30 px-3 sm:px-6 py-2.5 transition-colors"><div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3"><div onClick={()=>setActiveTab('home')} className="flex items-center gap-3 cursor-pointer group" title="Return to Command Hub"><div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-white font-bold group-hover:scale-105 transition-transform"><CalcIcon className="w-5 h-5"/></div><div><div className="flex items-center gap-2"><h1 className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5"><span>CALCORA</span><span className="text-cyan-500 font-bold">AI</span></h1><span className="hidden xs:inline-flex text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">PRO WORKBENCH</span></div><p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block font-medium">Calculate. Understand. Visualize. Learn.</p></div></div><div className="flex items-center gap-2">{onOpenCommandPalette&&<button id="btn-open-command-palette" type="button" onClick={onOpenCommandPalette} className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Open Command Palette (Ctrl+K or Cmd+K)"><Search className="w-3.5 h-3.5 text-cyan-500"/><span className="hidden sm:inline">Search</span><kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-900 text-slate-500">⌘K</kbd></button>}{onOpenWorkspaces&&<button id="btn-open-workspaces" type="button" onClick={onOpenWorkspaces} className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-colors" title="Open Workspaces, Notes & Export"><FolderKanban className="w-3.5 h-3.5"/><span className="hidden md:inline">Workspace</span></button>}<div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-0.5 border border-slate-200 dark:border-slate-800">{(['DEG','RAD','GRAD'] as AngleMode[]).map(mode=><button key={mode} id={`angle-mode-${mode.toLowerCase()}`} type="button" onClick={()=>setAngleMode(mode)} className={`px-2 py-1 text-[11px] font-semibold rounded transition-all ${angleMode===mode?'bg-cyan-500 text-slate-950 shadow-xs':'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}>{mode}</button>)}</div>{hasMemory&&<span className="px-2 py-1 text-[10px] font-bold rounded bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30" title="Memory active (M)">M</span>}<button id="btn-open-verification" type="button" onClick={onOpenVerification} className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors" title="Run production test suite"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500"/><span className="hidden md:inline">Audit Suite</span></button><div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-0.5 border border-slate-200 dark:border-slate-800"><button id="theme-light" type="button" onClick={()=>setTheme('light')} className={`p-1.5 rounded transition-all ${theme==='light'?'bg-white text-amber-500 shadow-xs':'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><Sun className="w-3.5 h-3.5"/></button><button id="theme-dark" type="button" onClick={()=>setTheme('dark')} className={`p-1.5 rounded transition-all ${theme==='dark'?'bg-slate-800 text-cyan-400 shadow-xs':'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><Moon className="w-3.5 h-3.5"/></button><button id="theme-system" type="button" onClick={()=>setTheme('system')} className={`p-1.5 rounded transition-all ${theme==='system'?'bg-slate-800 text-indigo-400 shadow-xs':'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><Monitor className="w-3.5 h-3.5"/></button></div></div></div><div className="max-w-7xl mx-auto mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80"><nav aria-label="Application Modules" className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">{tabs.map(tab=>{const Icon=tab.icon;const isActive=activeTab===tab.id;const activeClass=tab.isAi?'bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold shadow-xs':'bg-cyan-500 text-slate-950 font-bold shadow-xs';return <button key={tab.id} id={`tab-${tab.id}`} type="button" onClick={()=>setActiveTab(tab.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${isActive?activeClass:tab.isAi?'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30':'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'}`}><Icon className="w-3.5 h-3.5 shrink-0"/><span>{tab.label}</span></button>})}</nav></div></header>;
-};
+
+interface HeaderProps {
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
+  angleMode: AngleMode;
+  setAngleMode: (mode: AngleMode) => void;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
+  hasMemory: boolean;
+  historyCount: number;
+  onOpenVerification: () => void;
+  onOpenWorkspaces?: () => void;
+  onOpenCommandPalette?: () => void;
+}
+
+type TabDef = { id: ActiveTab; label: string; icon: React.ElementType };
+
+type TabGroup = { key: string; label: string; tabs: TabDef[] };
+
+/**
+ * Grouped once, at module scope, so the rail structure is declarative and the
+ * grouping is inspectable rather than rebuilt on every render.
+ */
+const TAB_GROUPS: TabGroup[] = [
+  {
+    key: 'hub',
+    label: 'Hub',
+    tabs: [{ id: 'home', label: 'Command Hub', icon: LayoutDashboard }],
+  },
+  {
+    key: 'compute',
+    label: 'Compute',
+    tabs: [
+      { id: 'calculator', label: 'Scientific', icon: CalcIcon },
+      { id: 'equations', label: 'Equations', icon: Binary },
+      { id: 'calculus', label: 'Calculus', icon: FunctionSquare },
+      { id: 'matrix', label: 'Matrix & Vec', icon: Layers },
+      { id: 'graph', label: 'Graphing', icon: TrendingUp },
+    ],
+  },
+  {
+    key: 'analyze',
+    label: 'Analyze',
+    tabs: [
+      { id: 'statistics', label: 'Statistics', icon: BarChart3 },
+      { id: 'datalab', label: 'Data Lab', icon: Database },
+      { id: 'programmer', label: 'Programmer', icon: Terminal },
+      { id: 'engineering', label: 'Engineering', icon: Ruler },
+    ],
+  },
+  {
+    key: 'learn',
+    label: 'Learn',
+    tabs: [
+      { id: 'ai', label: 'AI Tutor', icon: Sparkles },
+      { id: 'practice', label: 'Practice Quiz', icon: Award },
+      { id: 'notebook', label: 'Notebook', icon: BookOpen },
+      // The Multimodal Studio is a real route (App.tsx) that previously had no
+      // rail entry — it was reachable only from dashboard cards. Adding it is
+      // a navigation gap fix, not a new feature.
+      { id: 'multimodal', label: 'Voice & PDF', icon: ScanLine },
+    ],
+  },
+  {
+    key: 'convert',
+    label: 'Convert',
+    tabs: [
+      { id: 'units', label: 'Units', icon: ArrowRightLeft },
+      { id: 'finance', label: 'Finance', icon: Percent },
+      { id: 'currency', label: 'Currency', icon: DollarSign },
+      { id: 'formulas', label: 'Formulas', icon: Sigma },
+    ],
+  },
+  {
+    key: 'lab',
+    label: 'Lab',
+    tabs: [{ id: 'developer', label: 'Developer', icon: Code2 }],
+  },
+];
+
+const ANGLE_MODES: AngleMode[] = ['DEG', 'RAD', 'GRAD'];
+
+const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: React.ElementType }[] = [
+  { mode: 'light', label: 'Light theme', icon: Sun },
+  { mode: 'dark', label: 'Dark theme', icon: Moon },
+  { mode: 'system', label: 'System theme', icon: Monitor },
+];
+
+export const Header: React.FC<HeaderProps> = ({
+  activeTab,
+  setActiveTab,
+  angleMode,
+  setAngleMode,
+  theme,
+  setTheme,
+  hasMemory,
+  historyCount,
+  onOpenVerification,
+  onOpenWorkspaces,
+  onOpenCommandPalette,
+}) => (
+  <header
+    className="sticky top-0 z-30 w-full border-b cc-divider backdrop-blur-md transition-colors"
+    style={{ background: 'color-mix(in srgb, var(--cc-surface) 88%, transparent)' }}
+  >
+    <div className="max-w-7xl mx-auto px-3 sm:px-6">
+      {/* ---------------------------------------------------------------- */}
+      {/* Tier 1 — identity + global toolbar                                */}
+      {/* ---------------------------------------------------------------- */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <h1 className="m-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('home')}
+              className="cc-logo-btn"
+              title="Return to Command Hub"
+              aria-label="Calcora AI — return to Command Hub"
+            >
+              <span className="cc-logo" aria-hidden="true">
+                <CalcIcon />
+              </span>
+              <span className="text-base sm:text-lg font-extrabold tracking-tight leading-none whitespace-nowrap">
+                <span>CALCORA</span>
+                <span style={{ color: 'var(--cc-accent)' }}>AI</span>
+              </span>
+            </button>
+          </h1>
+          <span className="cc-chip cc-chip-accent hidden sm:inline-flex">Pro Workbench</span>
+          <p className="hidden lg:block text-[11px] cc-faint font-medium m-0 pl-2.5 cc-divider border-l">
+            Calculate. Understand. Visualize. Learn.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {onOpenCommandPalette && (
+            <button
+              id="btn-open-command-palette"
+              type="button"
+              onClick={onOpenCommandPalette}
+              className="cc-btn"
+              title="Open Command Palette (Ctrl+K or Cmd+K)"
+              aria-label="Open command palette"
+            >
+              <Search aria-hidden="true" />
+              <span className="hidden md:inline">Search</span>
+              <kbd className="hidden xl:inline cc-faint font-mono text-[11px] font-semibold">⌘K</kbd>
+            </button>
+          )}
+
+          {onOpenWorkspaces && (
+            <button
+              id="btn-open-workspaces"
+              type="button"
+              onClick={onOpenWorkspaces}
+              className="cc-btn"
+              title="Open Workspaces, Notes & Export"
+            >
+              <FolderKanban aria-hidden="true" />
+              <span className="hidden lg:inline">Workspace</span>
+            </button>
+          )}
+
+          <span className="cc-vrule hidden sm:block" aria-hidden="true" />
+
+          <div className="cc-seg" role="group" aria-label="Angle mode">
+            {ANGLE_MODES.map((mode) => (
+              <button
+                key={mode}
+                id={`angle-mode-${mode.toLowerCase()}`}
+                type="button"
+                onClick={() => setAngleMode(mode)}
+                aria-pressed={angleMode === mode}
+                title={`Angle mode: ${mode}`}
+                className="cc-seg-btn"
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          {hasMemory && (
+            <span
+              className="cc-chip cc-chip-warning hidden sm:inline-flex"
+              title={`Memory active (M) · ${historyCount} history records`}
+            >
+              M
+            </span>
+          )}
+
+          <button
+            id="btn-open-verification"
+            type="button"
+            onClick={onOpenVerification}
+            className="cc-btn"
+            style={{
+              color: 'var(--cc-success)',
+              borderColor: 'color-mix(in srgb, var(--cc-success) 35%, transparent)',
+              background: 'var(--cc-success-soft)',
+            }}
+            title="Run production test suite"
+          >
+            <CheckCircle2 aria-hidden="true" />
+            <span className="hidden xl:inline">Audit Suite</span>
+          </button>
+
+          <span className="cc-vrule hidden sm:block" aria-hidden="true" />
+
+          <div className="cc-seg" role="group" aria-label="Colour theme">
+            {THEME_OPTIONS.map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                id={`theme-${mode}`}
+                type="button"
+                onClick={() => setTheme(mode)}
+                aria-pressed={theme === mode}
+                aria-label={label}
+                title={label}
+                className="cc-seg-btn"
+              >
+                <Icon aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Tier 2 — grouped module rail                                      */}
+      {/* ---------------------------------------------------------------- */}
+      <div className="border-t cc-divider">
+        <nav
+          aria-label="Application Modules"
+          className="flex items-center gap-1 overflow-x-auto py-1.5 scrollbar-none"
+        >
+          {TAB_GROUPS.map((group) => (
+            <div key={group.key} className="cc-nav-group" role="group" aria-label={group.label}>
+              <span className="cc-nav-group-label" aria-hidden="true">
+                {group.label}
+              </span>
+              {group.tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`tab-${tab.id}`}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    aria-current={isActive ? 'page' : undefined}
+                    title={`Open ${tab.label}`}
+                    className="cc-nav-item shrink-0"
+                  >
+                    <Icon className="cc-nav-icon" aria-hidden="true" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </div>
+    </div>
+  </header>
+);

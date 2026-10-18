@@ -10,6 +10,7 @@
  */
 import {
   VERIFICATION_STATES,
+  fromAgentStatus,
   type VerificationState,
 } from '../src/verification/verificationStates';
 import { verifyCalculation, verifyEquation, verifyConceptual, verifyUnsupported } from '../src/verification/independentVerifier';
@@ -191,6 +192,33 @@ check(
   samples.every((s) => s.checkedAt > 0),
   'every outcome is timestamped',
 );
+
+// ---------------------------------------------------------------------------
+// Agent status mapping: a derivative spot-check is a real independent check.
+// ---------------------------------------------------------------------------
+// The Math Agent reports PASS/FAIL/UNKNOWN with a method name. A `spot-check`
+// (symbolic derivative vs. central difference) is a genuinely independent
+// numeric observation, so it must map to the canonical `recompute` method —
+// silently falling through to `none` would claim VERIFIED with no method,
+// breaking the "VERIFIED carries an independent observation" contract.
+const spotPass = fromAgentStatus('PASS', 'spot-check', 'central difference matched at 4/4 sample points', '4/4', '2x');
+check(spotPass.state === 'VERIFIED', 'a passing spot-check reports VERIFIED');
+check(
+  spotPass.method === 'recompute',
+  `a passing spot-check maps to the canonical recompute method, got "${spotPass.method}"`,
+);
+check(
+  spotPass.independent !== null,
+  'a VERIFIED spot-check carries the independent observation',
+);
+const spotFail = fromAgentStatus('FAIL', 'spot-check', 'symbolic derivative 3x disagrees with numerical 2x', '1/4', '3x');
+check(spotFail.state === 'FAILED', 'a failing spot-check reports FAILED');
+check(
+  spotFail.method === 'recompute',
+  `a failing spot-check maps to recompute so the disagreement is attributable, got "${spotFail.method}"`,
+);
+const spotUnknown = fromAgentStatus('UNKNOWN', 'spot-check', 'no evaluable sample points', undefined, null);
+check(spotUnknown.state === 'UNVERIFIED', 'an unknown spot-check reports UNVERIFIED, never VERIFIED');
 
 console.log(`\nVerification contract tests passed: ${passed}, failed: ${failures.length}`);
 if (failures.length) {

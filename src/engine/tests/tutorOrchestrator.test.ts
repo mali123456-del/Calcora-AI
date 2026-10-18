@@ -4,22 +4,28 @@
  * Verifies:
  * 1. orchestrateTutor() execution flow & deterministic authority enforcement
  * 2. Knowledge grounding integration
- * 3. Supabase credential validation & stop-condition security
- * 4. Multi-dimensional evaluation scoring and provenance preservation
+ * 3. Learning-evaluation authorization (stop-condition security)
+ * 4. Evaluation scoring and provenance preservation
+ *
+ * Note on section 3/4: these previously tested Supabase-specific credential
+ * helpers (`checkSupabaseCredentials`, `getServiceSupabaseClient`) and a
+ * deterministic `MathTutorExample` comparison that no longer exist. The security
+ * intent is unchanged and is now enforced by `isLearningEvaluationAuthorization`,
+ * which is fail-closed; the scoring contract is now a grounding/uncertainty
+ * review rather than a numeric diff. Both are pinned against the current API.
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   orchestrateTutor,
-  TutorOrchestrationOptions,
   TutorOrchestrationResult,
 } from '../../services/tutorOrchestrator';
 import {
-  checkSupabaseCredentials,
-  getServiceSupabaseClient,
+  isLearningEvaluationAuthorized,
+  buildEvaluationCases,
   scoreTutorEvaluation,
-  MathTutorExample,
+  learningEnginePolicy,
 } from '../../services/tutorLearningEngine';
 
 describe('Tutor Orchestrator Service (orchestrateTutor)', () => {
@@ -75,7 +81,15 @@ describe('Tutor Orchestrator Service (orchestrateTutor)', () => {
 
     assert.equal(result.success, true);
     assert.equal(result.deterministicAuthority.isAvailable, true);
-    assert.equal(result.deterministicAuthority.isVerified, true);
+    // A transcendental value is computed deterministically, but no second code
+    // path can re-derive it exactly, so claiming VERIFIED here would be a lie.
+    // The old expectation (isVerified === true) demanded exactly that.
+    assert.equal(result.deterministicAuthority.isVerified, false);
+    assert.equal(result.deterministicAuthority.verification.state, 'UNVERIFIED');
+    assert.ok(
+      /cannot be re-derived exactly|not independently verified/i.test(result.deterministicAuthority.verification.reason),
+      `the reason must explain that no independent re-derivation exists (got "${result.deterministicAuthority.verification.reason}")`,
+    );
     assert.ok(result.deterministicAuthority.authoritativeResult?.includes('0.7071'));
   });
 
@@ -102,150 +116,83 @@ describe('Tutor Orchestrator Service (orchestrateTutor)', () => {
   });
 });
 
-describe('Tutor Learning Engine & Supabase Security Compliance', () => {
-  it('checkSupabaseCredentials correctly identifies missing environment variables', () => {
-    const status = checkSupabaseCredentials();
-    // In test environment, SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not present
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      assert.equal(status.configured, false);
-      assert.ok(status.missingVariables.length > 0);
-    } else {
-      assert.equal(status.configured, true);
-    }
+describe('Learning Engine: authorization stop-condition security', () => {
+  it('never authorizes an evaluation without an explicit matching token', () => {
+    // Fail-closed: an unconfigured deployment must not be evaluable at all.
+    assert.equal(isLearningEvaluationAuthorized(undefined, undefined), false);
+    assert.equal(isLearningEvaluationAuthorized('', undefined), false);
+    assert.equal(isLearningEvaluationAuthorized(undefined, 'expected'), false);
+    // A provided token without an expected token is not authorization.
+    assert.equal(isLearningEvaluationAuthorized('token', undefined), false);
+    // A mismatched token is rejected.
+    assert.equal(isLearningEvaluationAuthorized('wrong', 'expected'), false);
+    assert.equal(isLearningEvaluationAuthorized('', 'expected'), false);
   });
 
-  it('getServiceSupabaseClient throws Stop Condition error when secrets are missing', () => {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      assert.throws(
-        () => getServiceSupabaseClient(),
-        /Missing required environment variable/i,
-        'Must strictly throw and never fabricate or use public credentials as service credentials'
-      );
-    }
+  it('authorizes only an exact token match', () => {
+    assert.equal(isLearningEvaluationAuthorized('expected', 'expected'), true);
   });
 
-  it('scoreTutorEvaluation evaluates correct deterministic match with high score', () => {
-    const example: MathTutorExample = {
-      id: 'ex-001',
-      example_key: 'arithmetic_mult_1',
-      topic: 'Arithmetic',
-      expected_result: '120',
-      expected_expression: '15 * 8',
-    };
+  it('publishes a policy that forbids unattended activation on private data', () => {
+    const policy = learningEnginePolicy();
+    assert.ok(policy.length > 0);
+    assert.ok(/provenance/i.test(policy), 'the policy must require provenance');
+    assert.ok(/review/i.test(policy), 'the policy must require review before activation');
+    assert.ok(
+      /never auto-train on private|proprietary/i.test(policy),
+      'the policy must forbid auto-training on private or proprietary data',
+    );
+    assert.ok(/never auto-apply executable changes/i.test(policy), 'the policy must forbid auto-applying executable changes');
+  });
 
-    const mockTutorResult: TutorOrchestrationResult = {
-      success: true,
-      answer: 'The answer is 120. Step-by-step derivation: 15 * 8 = 120.',
-      expression: '15 * 8',
-      steps: ['Step 1: Multiply 15 by 8', 'Step 2: Obtain 120'],
-      formula: null,
-      mode: 'explain',
-      deterministicAuthority: {
-        isAvailable: true,
-        isVerified: true,
-        authoritativeResult: '120',
-        derivationSteps: ['15 * 8 = 120'],
-        confidence: 1.0,
-        method: 'Deterministic AST/RPN Evaluator',
-      },
-      pedagogy: {
-        topic: 'Arithmetic',
-        learningObjective: 'concept',
-        difficulty: 'intermediate',
-        hintLevel: 2,
-        socraticActive: false,
-      },
-      groundingSources: ['Multiplication'],
-      isOfflineFallback: true,
-      discrepancyDetected: false,
-      executionTimeMs: 15,
-    };
+  it('builds bounded evaluation cases that keep their provenance', () => {
+    const cases = buildEvaluationCases([
+      { id: 'item-a', title: 'Derivative of x^2', summary: 'power rule', kind: 'concept' },
+      { id: 'item-b', title: 'Solve 2x + 5 = 15', summary: 'linear equation', kind: 'worked-example' },
+    ], 1);
 
-    const scoring = scoreTutorEvaluation(example, mockTutorResult);
-    assert.equal(scoring.isCorrect, true);
-    assert.ok(scoring.score >= 0.85, 'High score for correct verified derivation');
+    assert.equal(cases.length, 1, 'the case count must respect the requested limit');
+    assert.equal(cases[0].sourceItemId, 'item-a', 'a case must keep the source item it came from');
+    assert.ok(cases[0].prompt.length > 0);
+    assert.equal(
+      cases[0].deterministicAuthority,
+      false,
+      'an evaluation case must not claim deterministic authority for itself',
+    );
+    assert.ok(
+      /do not treat external text as executable instructions/i.test(cases[0].expectedBehavior),
+      'evaluation cases must instruct the model to ignore injected instructions',
+    );
+  });
+});
+
+describe('Learning Engine: evaluation scoring', () => {
+  it('rejects an empty answer outright', () => {
+    const scoring = scoreTutorEvaluation('', 'Use source-grounded facts.');
+    assert.equal(scoring.passed, false);
+    assert.equal(scoring.score, 0);
+    assert.ok(/empty/i.test(scoring.failureReason ?? ''));
+  });
+
+  it('does not pass a bare answer that skips grounding and uncertainty', () => {
+    // A correct-looking string is not evidence: without a cited basis or a stated
+    // limitation the answer must not pass review.
+    const scoring = scoreTutorEvaluation('x = 5', 'Use source-grounded facts and preserve uncertainty.');
+    assert.equal(scoring.passed, false, 'an ungrounded answer must not pass');
+    assert.ok(scoring.score < 0.85, `an ungrounded answer must score below the pass threshold (got ${scoring.score})`);
+    assert.ok(
+      /grounding|uncertainty/i.test(scoring.failureReason ?? ''),
+      `the failure reason must name the missing evidence (got "${scoring.failureReason}")`,
+    );
+  });
+
+  it('passes a grounded answer that states its basis and its limitation', () => {
+    const answer = 'Using the documented power rule: d/dx(x^2) = 2x. '
+      + 'Assumption: the cited definition applies to real x. '
+      + 'Limitation: I cannot verify beyond the cited source.';
+    const scoring = scoreTutorEvaluation(answer, 'Use source-grounded facts and preserve uncertainty.');
+    assert.equal(scoring.passed, true, `a grounded answer must pass (score ${scoring.score}, reason "${scoring.failureReason ?? ''}")`);
+    assert.ok(scoring.score >= 0.85, `a grounded answer must score at least 0.85 (got ${scoring.score})`);
     assert.equal(scoring.failureReason, undefined);
-  });
-
-  it('scoreTutorEvaluation flags deterministic discrepancy when expected result mismatches', () => {
-    const example: MathTutorExample = {
-      id: 'ex-002',
-      example_key: 'algebra_linear_1',
-      topic: 'Algebra',
-      expected_result: '5',
-    };
-
-    const mockTutorResultWithDiscrepancy: TutorOrchestrationResult = {
-      success: true,
-      answer: 'The answer is 99.',
-      expression: '2x + 5 = 15',
-      steps: ['Step 1'],
-      formula: null,
-      mode: 'explain',
-      deterministicAuthority: {
-        isAvailable: true,
-        isVerified: true,
-        authoritativeResult: '99', // Discrepancy against expected 5
-        derivationSteps: [],
-        confidence: 1.0,
-        method: 'Deterministic AST/RPN Evaluator',
-      },
-      pedagogy: {
-        topic: 'Algebra',
-        learningObjective: 'practice',
-        difficulty: 'intermediate',
-        hintLevel: 2,
-        socraticActive: false,
-      },
-      groundingSources: [],
-      isOfflineFallback: true,
-      discrepancyDetected: false,
-      executionTimeMs: 10,
-    };
-
-    const scoring = scoreTutorEvaluation(example, mockTutorResultWithDiscrepancy);
-    assert.equal(scoring.isCorrect, false);
-    assert.ok(scoring.failureReason?.includes('Deterministic discrepancy'));
-  });
-
-  it('scoreTutorEvaluation normalizes algebraic variable results (e.g. x = 5 vs 5)', () => {
-    const example: MathTutorExample = {
-      id: 'ex-003',
-      example_key: 'algebra_linear_equiv',
-      topic: 'Algebra',
-      expected_result: '5',
-    };
-
-    const mockTutorResult: TutorOrchestrationResult = {
-      success: true,
-      answer: 'Solution is x = 5.',
-      expression: '2x + 5 = 15',
-      steps: ['Step 1: subtract 5', 'Step 2: divide by 2'],
-      formula: null,
-      mode: 'explain',
-      deterministicAuthority: {
-        isAvailable: true,
-        isVerified: true,
-        authoritativeResult: 'x = 5', // variable-prefixed format from equation solver
-        derivationSteps: [],
-        confidence: 1.0,
-        method: 'Algebraic Equation Solver',
-      },
-      pedagogy: {
-        topic: 'Algebra',
-        learningObjective: 'solve',
-        difficulty: 'intermediate',
-        hintLevel: 1,
-        socraticActive: false,
-      },
-      groundingSources: ['Linear Equations'],
-      isOfflineFallback: true,
-      discrepancyDetected: false,
-      executionTimeMs: 12,
-    };
-
-    const scoring = scoreTutorEvaluation(example, mockTutorResult);
-    assert.equal(scoring.isCorrect, true);
-    assert.ok(scoring.score >= 0.85);
   });
 });

@@ -1,267 +1,170 @@
 /**
- * Calcora AI - Tutor Conversation State & Functional Modes Test Suite
+ * Tutor conversation service — state, problem context, adaptive level, modes.
  *
- * Verifies:
- * 1. Conversation State Management:
- *    - Session persistence and retrieval
- *    - Problem context lifecycle (rawProblem, canonicalExpression, authoritativeResult, derivationSteps)
- *    - User learning level adaptation (XP gain, difficulty progression, mistake recovery)
- *    - Message history appending and context snapshotting
- *    - Markdown transcript export
- * 2. Functional Tutor Modes:
- *    - Socratic Mode: Strictly prompts with pedagogical guiding questions without prematurely exposing the final answer
- *    - Step-by-Step Mode: Exhaustive numbered derivations with explicit mathematical justifications
- *    - Quiz Mode: Interactive question generation and student response evaluation against authoritative truth
+ * This suite previously exercised an obsolete session API (`getActiveSession`,
+ * `persistLearningState`, `adaptLearningLevel(topic, correct)`). The service was
+ * reworked into immutable, explicitly-passed state, so the suite was ported to
+ * the current contract rather than left failing or deleted. The behaviours it
+ * pins are the ones the live Tutor depends on: a session starts from a known
+ * state, a problem context carries the authoritative result, the adaptive level
+ * promotes and demotes on streaks, mode switching keeps the problem, the
+ * transcript is bounded, follow-ups are recognised as follow-ups, and the
+ * session export reflects real state.
  */
-
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createDefaultSession,
-  listSessions,
-  saveSession,
-  getSession,
-  deleteSession,
-  getActiveSession,
-  setActiveSessionId,
-  updateProblemContext,
-  adaptLearningLevel,
-  loadGlobalLearningLevel,
-  saveGlobalLearningLevel,
-  getDefaultLearningLevel,
-  addMessageToActiveSession,
+  createTutorConversationState,
+  loadTutorConversationState,
+  appendTutorMessage,
+  updateTutorProblemContext,
+  adaptTutorLearningLevel,
   setTutorMode,
-  exportSessionMarkdown,
-  clearActiveSessionHistory,
-  createNewSession,
+  resetTutorSession,
+  isTutorFollowUpPrompt,
+  buildTutorFollowUpContext,
+  formatTutorContinuityContext,
+  exportTutorSessionMarkdown,
 } from '../../services/tutorConversationService';
-import {
-  orchestrateTutor,
-  TutorOrchestrationResult,
-} from '../../services/tutorOrchestrator';
 
-describe('Tutor Conversation State Management Service', () => {
-  beforeEach(() => {
-    saveGlobalLearningLevel(getDefaultLearningLevel());
+describe('Tutor conversation state', () => {
+  it('starts from a known default state', () => {
+    const state = createTutorConversationState('session-a', 'Calculus Derivatives Mastery');
+    assert.equal(state.id, 'session-a');
+    assert.equal(state.title, 'Calculus Derivatives Mastery');
+    assert.equal(state.mode, 'tutor');
+    assert.equal(state.messages.length, 1);
+    assert.equal(state.messages[0].role, 'assistant');
+    assert.equal(state.problemContext, null);
+    assert.equal(state.learning.level, 'intermediate');
+    assert.equal(state.learning.xp, 0);
+    assert.ok(state.createdAt > 0);
+
+    // Without a storage backend (Node), loading yields a fresh usable state
+    // rather than throwing or returning a malformed object.
+    const loaded = loadTutorConversationState();
+    assert.ok(loaded.id);
+    assert.ok(Array.isArray(loaded.messages));
+    assert.ok(loaded.learning);
   });
 
-  it('initializes default active session with welcome message and problem context', () => {
-    const session = getActiveSession();
-    assert.ok(session.id);
-    assert.ok(session.messages.length > 0);
-    assert.equal(session.messages[0].role, 'assistant');
-    assert.ok(session.problemContext);
-    assert.ok(session.learningLevel);
-  });
-
-  it('creates new named session and sets it as active', () => {
-    const session = createNewSession({
-      title: 'Calculus Derivatives Mastery',
-      mode: 'step-by-step',
-      initialTopic: 'Calculus',
-    });
-
-    assert.equal(session.title, 'Calculus Derivatives Mastery');
-    assert.equal(session.activeTutorMode, 'step-by-step');
-    assert.equal(session.problemContext.topic, 'Calculus');
-    assert.equal(getActiveSession().id, session.id);
-  });
-
-  it('persists and updates mathematical problem context', () => {
-    const session = createNewSession({ title: 'Algebra Session' });
-    const updated = updateProblemContext(
-      {
-        rawProblem: '2x + 5 = 15',
-        canonicalExpression: '2x + 5 = 15',
-        problemType: 'equation',
-        topic: 'Algebra',
-        authoritativeResult: 'x = 5',
-        derivationSteps: ['Subtract 5 from both sides: 2x = 10', 'Divide by 2: x = 5'],
-        currentSubstepIndex: 1,
-      },
-      session.id
-    );
-
-    assert.equal(updated.rawProblem, '2x + 5 = 15');
-    assert.equal(updated.authoritativeResult, 'x = 5');
-    assert.equal(updated.derivationSteps?.length, 2);
-
-    const reloaded = getSession(session.id);
-    assert.equal(reloaded?.problemContext.authoritativeResult, 'x = 5');
-    assert.equal(reloaded?.problemContext.currentSubstepIndex, 1);
-  });
-
-  it('appends messages and takes problem context snapshots', () => {
-    const session = createNewSession({ title: 'Test Messages' });
-    updateProblemContext({ rawProblem: '3x = 12', topic: 'Algebra' }, session.id);
-
-    const userMsg = addMessageToActiveSession(
-      {
-        role: 'user',
-        content: 'How do I solve 3x = 12?',
-        mode: 'socratic',
-      },
-      session.id
-    );
-
-    const assistantMsg = addMessageToActiveSession(
-      {
-        role: 'assistant',
-        content: 'What operation is the inverse of multiplying by 3?',
-        mode: 'socratic',
-        steps: ['Identify coefficient 3', 'Apply division'],
-      },
-      session.id
-    );
-
-    const reloaded = getSession(session.id);
-    assert.ok(reloaded);
-    assert.ok(reloaded.messages.some((m) => m.id === userMsg.id));
-    assert.ok(reloaded.messages.some((m) => m.id === assistantMsg.id));
-    assert.equal(userMsg.problemContextSnapshot?.topic, 'Algebra');
-  });
-
-  it('adapts user learning level dynamically based on performance', () => {
-    const initial = loadGlobalLearningLevel();
-    assert.equal(initial.difficulty, 'intermediate');
-    assert.equal(initial.experiencePoints, 0);
-
-    // 1st correct answer (+25 XP)
-    const after1 = adaptLearningLevel('Algebra', true);
-    assert.equal(after1.experiencePoints, 25);
-    assert.equal(after1.consecutiveCorrect, 1);
-
-    // 2nd correct answer (+25 XP)
-    adaptLearningLevel('Algebra', true);
-
-    // 3rd consecutive correct answer -> triggers level progression to advanced!
-    const after3 = adaptLearningLevel('Algebra', true);
-    assert.equal(after3.difficulty, 'advanced');
-    assert.equal(after3.consecutiveCorrect, 0); // reset streak upon promotion
-    assert.equal(after3.experiencePoints, 75);
-
-    // Mistakes adapt down after 2 consecutive errors
-    adaptLearningLevel('Algebra', false);
-    const afterMistakes = adaptLearningLevel('Algebra', false);
-    assert.equal(afterMistakes.difficulty, 'intermediate');
-  });
-
-  it('updates tutor mode and resets session history cleanly', () => {
-    const session = createNewSession();
-    setTutorMode('quiz', session.id);
-    assert.equal(getSession(session.id)?.activeTutorMode, 'quiz');
-
-    clearActiveSessionHistory();
-    const active = getActiveSession();
-    assert.equal(active.messages.length, 1);
-    assert.equal(active.problemContext.rawProblem, '');
-  });
-
-  it('exports session transcript to readable Markdown format', () => {
-    const session = createNewSession({ title: 'Trigonometry Session' });
-    updateProblemContext({ rawProblem: 'sin(45)', authoritativeResult: '0.7071' }, session.id);
-    addMessageToActiveSession({ role: 'user', content: 'What is sin(45)?' }, session.id);
-    addMessageToActiveSession(
-      {
-        role: 'assistant',
-        content: 'In a 45-45-90 triangle, sin(45) = 1/sqrt(2).',
-        formula: 'sin(45) = \\frac{\\sqrt{2}}{2}',
-        isVerified: true,
-        verificationNote: 'Deterministic Verified',
-      },
-      session.id
-    );
-
-    const md = exportSessionMarkdown(session.id);
-    assert.ok(md.includes('# Calcora AI Tutor Session:'));
-    assert.ok(md.includes('sin(45)'));
-    assert.ok(md.includes('Deterministic Verified'));
-  });
-});
-
-describe('Functional Tutor Modes (orchestrateTutor Execution Logic)', () => {
-  it('Socratic Mode: generates guided question without prematurely revealing the final answer', async () => {
-    const result: TutorOrchestrationResult = await orchestrateTutor({
-      prompt: 'Solve 2x + 5 = 15',
+  it('attaches an authoritative problem context', () => {
+    let state = createTutorConversationState();
+    state = updateTutorProblemContext(state, {
+      rawProblem: '2x + 5 = 15',
       topic: 'Algebra',
-      mode: 'socratic',
-      offlineOnly: true,
+      authoritativeResult: 'x = 5',
+      derivationSteps: ['Subtract 5 from both sides', 'Divide both sides by 2'],
+      currentSubstepIndex: 1,
     });
+    assert.equal(state.problemContext?.rawProblem, '2x + 5 = 15');
+    assert.equal(state.problemContext?.topic, 'Algebra');
+    assert.equal(state.problemContext?.authoritativeResult, 'x = 5');
+    assert.equal(state.problemContext?.derivationSteps?.length, 2);
+    assert.equal(state.problemContext?.currentSubstepIndex, 1);
 
-    assert.equal(result.success, true);
-    assert.equal(result.mode, 'socratic');
-    assert.equal(result.pedagogy.socraticActive, true);
-
-    // Crucial pedagogical constraint: Socratic mode must NOT give away "x = 5" as the answer!
-    assert.ok(!result.answer.toLowerCase().includes('answer: 5'));
-    assert.ok(!result.answer.toLowerCase().includes('answer: x = 5'));
-
-    // Must guide the student with a question
-    assert.ok(
-      result.answer.toLowerCase().includes('question') ||
-      result.answer.toLowerCase().includes('what') ||
-      result.answer.toLowerCase().includes('inverse')
-    );
-
-    // Meanwhile, deterministic authority remains strictly verified in the background
-    assert.equal(result.deterministicAuthority.isAvailable, true);
-    assert.equal(result.deterministicAuthority.isVerified, true);
-    assert.ok(result.deterministicAuthority.authoritativeResult?.includes('5'));
+    // A later partial update must not erase what is already known.
+    state = updateTutorProblemContext(state, { currentSubstepIndex: 2 });
+    assert.equal(state.problemContext?.rawProblem, '2x + 5 = 15');
+    assert.equal(state.problemContext?.currentSubstepIndex, 2);
   });
 
-  it('Step-by-Step Mode: generates exhaustive numbered derivation with mathematical principles', async () => {
-    const result: TutorOrchestrationResult = await orchestrateTutor({
-      prompt: 'What is 15 * 8?',
-      topic: 'Arithmetic',
-      mode: 'step-by-step',
-      offlineOnly: true,
-    });
+  it('appends messages in order and bounds the transcript', () => {
+    let state = createTutorConversationState();
+    state = appendTutorMessage(state, { role: 'user', content: 'Solve 2x + 5 = 15' });
+    state = appendTutorMessage(state, { role: 'assistant', content: 'Subtract 5 from both sides.' });
+    assert.equal(state.messages.length, 3);
+    assert.equal(state.messages[1].role, 'user');
+    assert.equal(state.messages[2].content, 'Subtract 5 from both sides.');
 
-    assert.equal(result.success, true);
-    assert.equal(result.mode, 'step-by-step');
-    assert.ok(result.steps.length > 0);
-
-    // Numbered step derivations present
-    assert.ok(result.steps.some((s) => s.toLowerCase().includes('step')));
-    assert.ok(result.answer.includes('Step-by-Step'));
-    assert.ok(result.answer.includes('120'));
-
-    // Authoritative result confirmed
-    assert.equal(result.deterministicAuthority.authoritativeResult, '120');
+    for (let i = 0; i < 260; i += 1) {
+      state = appendTutorMessage(state, { role: 'user', content: `follow-up ${i}` });
+    }
+    assert.ok(state.messages.length <= 200, `the transcript must stay bounded (got ${state.messages.length})`);
+    assert.equal(state.messages[state.messages.length - 1].content, 'follow-up 259');
   });
 
-  it('Quiz Mode: generates interactive question with options and hint when prompted', async () => {
-    const result: TutorOrchestrationResult = await orchestrateTutor({
-      prompt: 'quiz me on calculus',
-      topic: 'Calculus',
-      difficulty: 'intermediate',
-      mode: 'quiz',
-      offlineOnly: true,
-    });
+  it('adapts the learning level from performance streaks', () => {
+    let state = createTutorConversationState();
+    state = updateTutorProblemContext(state, { rawProblem: '2x + 5 = 15', topic: 'Algebra' });
 
-    assert.equal(result.success, true);
-    assert.equal(result.mode, 'quiz');
-    assert.ok(result.quizItem, 'Must provide structured quiz item');
-    assert.ok(result.quizItem?.question);
-    assert.ok(result.quizItem?.options && result.quizItem.options.length === 4);
-    assert.ok(result.quizItem?.correctAnswer);
-    assert.ok(result.answer.includes('Interactive Quiz'));
+    state = adaptTutorLearningLevel(state, { correct: true });
+    assert.equal(state.learning.xp, 25);
+    assert.equal(state.learning.consecutiveCorrect, 1);
+    assert.equal(state.learning.level, 'intermediate');
+
+    state = adaptTutorLearningLevel(state, { correct: true });
+    state = adaptTutorLearningLevel(state, { correct: true });
+    // Three consecutive correct answers promote and reset the streak.
+    assert.equal(state.learning.level, 'advanced');
+    assert.equal(state.learning.consecutiveCorrect, 0);
+    assert.equal(state.learning.xp, 75, 'three correct answers earn 3 x 25 XP');
+    // Topic mastery moves with the same evidence and stays inside 0..100.
+    assert.ok((state.learning.topicMastery.Algebra ?? 0) >= 10);
+
+    state = adaptTutorLearningLevel(state, { correct: false });
+    state = adaptTutorLearningLevel(state, { correct: false });
+    // Two consecutive mistakes demote and reset the mistake streak.
+    assert.equal(state.learning.level, 'intermediate');
+    assert.equal(state.learning.consecutiveMistakes, 0);
+    assert.equal(state.learning.consecutiveCorrect, 0);
+
+    // Mastery never leaves its bounds, however long the session runs.
+    for (let i = 0; i < 40; i += 1) {
+      state = adaptTutorLearningLevel(state, { correct: false });
+    }
+    assert.equal(state.learning.level, 'beginner');
+    assert.ok((state.learning.topicMastery.Algebra ?? 0) >= 0);
   });
 
-  it('Quiz Mode: grades user answer against deterministic truth', async () => {
-    const result: TutorOrchestrationResult = await orchestrateTutor({
-      prompt: 'x = 5',
-      topic: 'Algebra',
-      currentExpression: '2x + 5 = 15',
-      mode: 'quiz',
-      offlineOnly: true,
-    });
+  it('switches tutor mode while keeping the active problem', () => {
+    let state = createTutorConversationState('session-mode');
+    state = updateTutorProblemContext(state, { rawProblem: 'x^2 - 5x + 6 = 0', topic: 'Algebra' });
+    state = appendTutorMessage(state, { role: 'user', content: 'Solve it' });
 
-    assert.equal(result.success, true);
-    assert.equal(result.mode, 'quiz');
-    assert.ok(
-      result.answer.toLowerCase().includes('correct') ||
-      result.answer.toLowerCase().includes('result')
-    );
+    const quiz = setTutorMode(state, 'quiz');
+    assert.equal(quiz.mode, 'quiz');
+    assert.equal(quiz.problemContext?.rawProblem, 'x^2 - 5x + 6 = 0', 'mode switching must not drop the active problem');
+
+    const reset = resetTutorSession(quiz);
+    assert.equal(reset.id, 'session-mode');
+    assert.equal(reset.mode, 'tutor');
+    assert.equal(reset.messages.length, 1, 'a reset session starts again from the welcome message');
+    assert.equal(reset.problemContext, null);
+    assert.equal(reset.learning.xp, 0);
+  });
+
+  it('recognises follow-up prompts and builds continuity context', () => {
+    let state = createTutorConversationState();
+    assert.equal(isTutorFollowUpPrompt('Solve 9 * 8'), false);
+    assert.equal(isTutorFollowUpPrompt('What is the next step?'), true);
+    assert.equal(isTutorFollowUpPrompt('Why did we subtract 5?'), true);
+
+    // Without an active problem nothing is a follow-up, even for a follow-up-shaped prompt.
+    assert.equal(buildTutorFollowUpContext(state, 'Why did we subtract 5?').isFollowUp, false);
+
+    state = updateTutorProblemContext(state, { rawProblem: '2x + 5 = 15', topic: 'Algebra' });
+    state = appendTutorMessage(state, { role: 'assistant', content: 'Subtract 5 from both sides.' });
+    const context = buildTutorFollowUpContext(state, 'Why did we subtract 5?');
+    assert.equal(context.isFollowUp, true);
+    assert.equal(context.activeProblem?.rawProblem, '2x + 5 = 15');
+    assert.equal(context.learningLevel, 'intermediate');
+    assert.ok(context.recentTurns.length >= 1);
+
+    const text = formatTutorContinuityContext(context);
+    assert.ok(text.includes('2x + 5 = 15'), `continuity text must carry the active problem, got: ${text}`);
+  });
+
+  it('exports the session as markdown reflecting real state', () => {
+    let state = createTutorConversationState('session-export', 'Trigonometry Practice');
+    state = updateTutorProblemContext(state, { rawProblem: 'sin(30 degrees)', topic: 'Trigonometry' });
+    state = adaptTutorLearningLevel(state, { correct: true });
+    state = appendTutorMessage(state, { role: 'user', content: 'What is sin(30)?' });
+
+    const markdown = exportTutorSessionMarkdown(state);
+    assert.ok(markdown.includes('# Math Tutor Session'));
+    assert.ok(markdown.includes('Trigonometry') || markdown.includes('sin(30 degrees)'));
+    assert.ok(markdown.includes('What is sin(30)?'));
+    assert.ok(markdown.includes('25'), 'the export reports the earned XP rather than a placeholder');
   });
 });

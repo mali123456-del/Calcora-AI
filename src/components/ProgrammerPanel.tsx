@@ -100,7 +100,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Binary className="w-5 h-5 text-indigo-500" />
+            <Binary className="w-5 h-5 text-cyan-500" />
             Programmer Calculator
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -119,7 +119,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
               }}
               className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                 bitWidth === w
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -134,18 +134,20 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
         {/* HEX */}
         <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-            <span className="font-semibold text-indigo-500">HEX (16)</span>
+            <span className="font-semibold text-cyan-500">HEX (16)</span>
             <button
               onClick={() => copyToClipboard(bases.hex, 'HEX')}
+              aria-label={copiedBase === 'HEX' ? 'HEX value copied to clipboard' : 'Copy HEX value'}
               className="p-1 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
-              {copiedBase === 'HEX' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copiedBase === 'HEX' ? <Check aria-hidden="true" className="w-3 h-3 text-emerald-500" /> : <Copy aria-hidden="true" className="w-3 h-3" />}
             </button>
           </div>
           <input
             type="text"
             value={bases.hex}
             onChange={(e) => handleInputChange('HEX', e.target.value)}
+            aria-label="HEX (base 16) value"
             className="w-full font-mono text-base font-bold text-slate-900 dark:text-white bg-transparent focus:outline-hidden"
           />
         </div>
@@ -156,15 +158,17 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
             <span className="font-semibold text-emerald-500">DEC (10)</span>
             <button
               onClick={() => copyToClipboard(bases.dec, 'DEC')}
+              aria-label={copiedBase === 'DEC' ? 'DEC value copied to clipboard' : 'Copy DEC value'}
               className="p-1 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
-              {copiedBase === 'DEC' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copiedBase === 'DEC' ? <Check aria-hidden="true" className="w-3 h-3 text-emerald-500" /> : <Copy aria-hidden="true" className="w-3 h-3" />}
             </button>
           </div>
           <input
             type="text"
             value={bases.dec}
             onChange={(e) => handleInputChange('DEC', e.target.value)}
+            aria-label="DEC (base 10) value"
             className="w-full font-mono text-base font-bold text-slate-900 dark:text-white bg-transparent focus:outline-hidden"
           />
         </div>
@@ -175,15 +179,17 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
             <span className="font-semibold text-amber-500">OCT (8)</span>
             <button
               onClick={() => copyToClipboard(bases.oct, 'OCT')}
+              aria-label={copiedBase === 'OCT' ? 'OCT value copied to clipboard' : 'Copy OCT value'}
               className="p-1 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
-              {copiedBase === 'OCT' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copiedBase === 'OCT' ? <Check aria-hidden="true" className="w-3 h-3 text-emerald-500" /> : <Copy aria-hidden="true" className="w-3 h-3" />}
             </button>
           </div>
           <input
             type="text"
             value={bases.oct}
             onChange={(e) => handleInputChange('OCT', e.target.value)}
+            aria-label="OCT (base 8) value"
             className="w-full font-mono text-base font-bold text-slate-900 dark:text-white bg-transparent focus:outline-hidden"
           />
         </div>
@@ -191,18 +197,20 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
         {/* BIN */}
         <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-            <span className="font-semibold text-purple-500">BIN (2)</span>
+            <span className="font-semibold text-cyan-500">BIN (2)</span>
             <button
               onClick={() => copyToClipboard(bases.bin, 'BIN')}
+              aria-label={copiedBase === 'BIN' ? 'BIN value copied to clipboard' : 'Copy BIN value'}
               className="p-1 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
-              {copiedBase === 'BIN' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              {copiedBase === 'BIN' ? <Check aria-hidden="true" className="w-3 h-3 text-emerald-500" /> : <Copy aria-hidden="true" className="w-3 h-3" />}
             </button>
           </div>
           <input
             type="text"
             value={bases.bin}
             onChange={(e) => handleInputChange('BIN', e.target.value)}
+            aria-label="BIN (base 2) value"
             className="w-full font-mono text-xs font-bold text-slate-900 dark:text-white bg-transparent focus:outline-hidden break-all"
           />
         </div>
@@ -224,12 +232,14 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
               onClick={() => handleToggleBit(b.index)}
               className={`w-7 h-9 flex flex-col items-center justify-center rounded-lg border text-xs font-mono transition-all ${
                 b.value === 1
-                  ? 'bg-indigo-600 border-indigo-700 text-white font-bold shadow-xs'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-indigo-400'
+                  ? 'bg-cyan-700 border-cyan-700 text-white font-bold shadow-xs'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:border-cyan-400'
               }`}
             >
               <span>{b.value}</span>
-              <span className="text-[8px] opacity-60 leading-none">{b.index}</span>
+              {/* Index must stay readable: hierarchy comes from opacity, not
+                  from dropping below the 11px type floor. */}
+              <span className="text-[11px] opacity-60 leading-none">{b.index}</span>
             </button>
           ))}
         </div>
@@ -241,7 +251,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
           onClick={() => handleBitwiseClick('AND')}
           className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${
             pendingOp === 'AND'
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-cyan-700 text-white border-cyan-600'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
           }`}
         >
@@ -251,7 +261,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
           onClick={() => handleBitwiseClick('OR')}
           className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${
             pendingOp === 'OR'
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-cyan-700 text-white border-cyan-600'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
           }`}
         >
@@ -261,7 +271,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
           onClick={() => handleBitwiseClick('XOR')}
           className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${
             pendingOp === 'XOR'
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-cyan-700 text-white border-cyan-600'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
           }`}
         >
@@ -277,7 +287,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
           onClick={() => handleBitwiseClick('NAND')}
           className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${
             pendingOp === 'NAND'
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-cyan-700 text-white border-cyan-600'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
           }`}
         >
@@ -287,7 +297,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
           onClick={() => handleBitwiseClick('NOR')}
           className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-colors ${
             pendingOp === 'NOR'
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-cyan-700 text-white border-cyan-600'
               : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
           }`}
         >
@@ -326,7 +336,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
         </button>
         <button
           onClick={handleExecute}
-          className="py-2.5 px-3 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
+          className="py-2.5 px-3 rounded-xl text-xs font-bold bg-cyan-700 hover:bg-cyan-800 text-white shadow-xs transition-colors"
         >
           EXECUTE (=)
         </button>
@@ -337,7 +347,7 @@ export const ProgrammerPanel: React.FC<ProgrammerPanelProps> = ({ onSendToCalcul
         <div className="flex justify-end">
           <button
             onClick={() => onSendToCalculator(bases.dec)}
-            className="text-xs text-indigo-500 hover:underline flex items-center gap-1 font-semibold"
+            className="text-xs text-cyan-500 hover:underline flex items-center gap-1 font-semibold"
           >
             <span>Send Decimal ({bases.dec}) to Scientific Calculator</span>
             <ArrowRight className="w-3.5 h-3.5" />

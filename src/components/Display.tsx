@@ -103,13 +103,13 @@ export const Display: React.FC<DisplayProps> = ({
               title="Toggle between exact fraction and decimal"
             >
               <span>Exact: {fractionDisplay}</span>
-              <span className="text-[9px] uppercase px-1 rounded bg-cyan-500/30">d/f</span>
+              <span className="text-[11px] uppercase px-1 rounded bg-cyan-500/30">d/f</span>
             </button>
           )}
 
           {/* Engineering display badge */}
           {engineeringDisplay && !fractionDisplay && (
-            <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px]">
+            <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[11px]">
               ENG: {engineeringDisplay}
             </span>
           )}
@@ -182,7 +182,7 @@ export const Display: React.FC<DisplayProps> = ({
         {/* Live Calculation Preview */}
         {livePreview && !error && (
           <div className="text-xs sm:text-sm font-mono-math text-cyan-400/90 dark:text-cyan-400/90 light:text-cyan-600 font-medium flex items-center gap-1 mt-0.5">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Preview:</span>
+            <span className="text-[11px] text-slate-500 uppercase tracking-wider">Preview:</span>
             <span>= {livePreview}</span>
           </div>
         )}

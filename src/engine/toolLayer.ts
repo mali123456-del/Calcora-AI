@@ -4,10 +4,12 @@ import { solveSystemFromString } from './algebraEngine';
 import { evaluateLimit } from './calculusEngine';
 import { createClient } from '@supabase/supabase-js';
 import { numericalDerivative, simpsonsRuleDefiniteIntegral } from './calculusEngine';
+import { differentiate, spotCheckDerivative } from './symbolicDerivative';
 import { computeStatistics } from './statisticsEngine';
 import { determinantMatrix, multiplyMatrices } from './matrixEngine';
 import { convertUnits } from './unitConverter';
 import type { MathToolResult, MathVerificationBadge } from '../types';
+export type { MathToolResult, MathVerificationBadge };
 
 const MAX_EXPRESSION = 500;
 const MAX_MATRIX_DIM = 12;
@@ -100,7 +102,7 @@ export function toolCalculate(args: Record<string, unknown>): MathToolResult {
     const r = calculateExpression(expression, angleMode);
     if (r.error) return fail('calculate', expression, r.error);
     const value = String(r.value);
-    const steps = [`${expression} = ${value}`];
+    const steps = [`${expression} = ${r.display || value}`];
     return result('calculate', expression, value, steps, {
       exactResult: r.exactFraction ?? value,
       approximateResult: value,
@@ -145,9 +147,84 @@ export function toolDerivative(args: Record<string, unknown>): MathToolResult {
   const started = Date.now();
   try {
     const expression = str(args.expression ?? args.fnExpr, 'expression');
+    const variable = typeof args.variable === 'string' && args.variable.trim() && args.variable.trim().length <= 8
+      ? args.variable.trim()
+      : 'x';
+    const order = args.order === 2 ? 2 : 1;
+
+    // Primary path: symbolic differentiation. The answer is the derivative
+    // FUNCTION f'(x), never a point value.
+    let symbolic = differentiate(expression, variable);
+    if (symbolic.supported && order === 2 && symbolic.derivative) {
+      const secondPass = differentiate(symbolic.derivative, variable);
+      symbolic = secondPass.supported
+        ? { ...secondPass, rules: [...symbolic.rules, ...secondPass.rules] }
+        : secondPass;
+    }
+
+    if (symbolic.supported && symbolic.derivative) {
+      const spot = spotCheckDerivative(expression, symbolic.derivative, variable);
+      const label = order === 2 ? `d²/d${variable}²` : `d/d${variable}`;
+      const steps = [
+        `Symbolic differentiation: ${label}(${expression})`,
+        ...symbolic.rules.map((rule) => `Rule: ${rule}`),
+        `${label}(${expression}) = ${symbolic.derivative}`,
+        spot.summary,
+      ];
+      return result('derivative', expression, symbolic.derivative, steps, {
+        exactResult: symbolic.derivative,
+        executionTimeMs: Date.now() - started,
+        metadata: {
+          symbolic: true,
+          symbolicSupported: true,
+          order,
+          variable,
+          rules: symbolic.rules,
+          spotCheckPassed: spot.passed,
+          spotCheckPoints: spot.checked,
+        },
+        verificationBadge: {
+          isVerified: spot.passed,
+          verificationMethod: 'symbolic-differentiation + numerical spot-check',
+          verificationMessage: spot.summary,
+          timestamp: new Date().toISOString(),
+          confidence: spot.passed ? 1 : 0,
+        },
+      });
+    }
+
+    // Fallback path: the form has no symbolic derivative (abs, factorial, …).
+    // We still provide the legacy numerical estimate, but it is explicitly
+    // labelled as a single point value so it can never be mistaken for f'(x).
     const x = num(args.x ?? 0, 'x', -1e6, 1e6);
-    const r = numericalDerivative(expression, x, args.order === 2 ? 2 : 1);
-    return result('derivative', expression, String(r.value), r.steps, { approximateResult: String(r.value), executionTimeMs: Date.now() - started, metadata: { tangentLine: r.tangentLine } });
+    const r = numericalDerivative(expression, x, order);
+    const reason = symbolic.reason ?? 'the expression is outside the symbolic rule set';
+    const steps = [
+      `Symbolic differentiation is not supported here: ${reason}.`,
+      `Numerical estimate of the derivative AT ${variable} = ${x} only — a single point value, not a derivative function.`,
+      ...r.steps,
+    ];
+    return result('derivative', expression, String(r.value), steps, {
+      approximateResult: String(r.value),
+      executionTimeMs: Date.now() - started,
+      metadata: {
+        symbolic: false,
+        symbolicSupported: false,
+        unsupportedReason: reason,
+        pointEstimate: true,
+        atPoint: x,
+        order,
+        variable,
+        tangentLine: r.tangentLine,
+      },
+      verificationBadge: {
+        isVerified: false,
+        verificationMethod: 'unsupported-symbolic-form',
+        verificationMessage: `No derivative function was claimed: ${reason}. The value shown is a labelled numerical estimate at ${variable} = ${x}.`,
+        timestamp: new Date().toISOString(),
+        confidence: 0,
+      },
+    });
   } catch (e) { return fail('derivative', String(args.expression ?? args.fnExpr ?? ''), e instanceof Error ? e.message : 'Derivative failed'); }
 }
 
@@ -173,7 +250,7 @@ export function toolStatistics(args: Record<string, unknown>): MathToolResult {
     const r = computeStatistics(data as number[]);
     return result('statistics', `[${data.join(', ')}]`, JSON.stringify({ mean:r.mean, median:r.median, mode:r.mode, varianceSample:r.varianceSample, variancePopulation:r.variancePopulation, stdDevSample:r.stdDevSample, stdDevPopulation:r.stdDevPopulation, iqr:r.iqr }), [
       `Count = ${r.count}`, `Mean = ${r.mean}`, `Median = ${r.median}`, `IQR = ${r.iqr}`
-    ], { executionTimeMs: 0, metadata: { ...r } });
+    ], { executionTimeMs: 0, metadata: r as unknown as Record<string, unknown> });
   } catch (e) { return fail('statistics', 'dataset', e instanceof Error ? e.message : 'Statistics failed'); }
 }
 

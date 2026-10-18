@@ -293,7 +293,7 @@ export const GraphingPanel: React.FC<GraphingPanelProps> = ({ onSendToCalculator
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Crosshair className="w-5 h-5 text-indigo-500" />
+            <Crosshair className="w-5 h-5 text-cyan-500" />
             2D Graphing Workspace
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -361,7 +361,7 @@ export const GraphingPanel: React.FC<GraphingPanelProps> = ({ onSendToCalculator
               {functions.length < 4 && (
                 <button
                   onClick={addFunction}
-                  className="text-xs text-indigo-500 hover:underline flex items-center gap-1 font-semibold"
+                  className="text-xs text-cyan-500 hover:underline flex items-center gap-1 font-semibold"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Function</span>
@@ -387,7 +387,7 @@ export const GraphingPanel: React.FC<GraphingPanelProps> = ({ onSendToCalculator
                     value={fn.expression}
                     onChange={(e) => updateFunctionExpr(fn.id, e.target.value)}
                     placeholder="e.g. sin(x)"
-                    className="flex-1 font-mono text-sm px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    className="flex-1 font-mono text-sm px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500"
                   />
                   <button
                     onClick={() => toggleFunctionVisibility(fn.id)}
@@ -421,7 +421,7 @@ export const GraphingPanel: React.FC<GraphingPanelProps> = ({ onSendToCalculator
                         updateFunctionExpr(functions[0].id, ex);
                       }
                     }}
-                    className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-950/50 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
                   >
                     {ex}
                   </button>
@@ -447,7 +447,7 @@ export const GraphingPanel: React.FC<GraphingPanelProps> = ({ onSendToCalculator
 
             {/* Coordinate Inspector Overlay Badge */}
             <div className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/90 backdrop-blur-xs border border-slate-700/80 text-xs font-mono text-white shadow-lg flex items-center gap-2">
-              <span className="text-indigo-400">Trace:</span>
+              <span className="text-cyan-400">Trace:</span>
               {traceCoord ? (
                 <span>
                   x: <strong className="text-emerald-400">{traceCoord.x}</strong>, y:{' '}

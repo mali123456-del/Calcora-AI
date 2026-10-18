@@ -55,17 +55,40 @@ function isTrustedCalcoraRendererUrl(rawUrl, expectedPort = 3e3) {
   }
 }
 
+// electron/platformPolicy.ts
+function getWindowLifecyclePolicy(platform) {
+  const isMac = platform === "darwin";
+  return {
+    quitWhenAllWindowsClosed: !isMac,
+    recreateWindowOnActivate: isMac
+  };
+}
+function describeRecoveryDialogButtons(platform) {
+  const base = ["Retry", "Open logs folder", "Quit"];
+  return platform === "darwin" ? [...base, "Cancel"] : base;
+}
+function resolveRecoveryAction(responseIndex) {
+  if (responseIndex === 0) return "retry";
+  if (responseIndex === 1) return "open-logs";
+  return "quit";
+}
+function canUseOsCredentialStore(platform, encryptionAvailable, linuxStorageBackend) {
+  if (!encryptionAvailable) return false;
+  if (platform !== "linux") return true;
+  return linuxStorageBackend !== "basic_text" && linuxStorageBackend !== "unknown";
+}
+
 // electron/main.ts
 Object.assign(process.env, getDesktopRuntimeEnvironment());
+var WINDOW_LIFECYCLE = getWindowLifecyclePolicy(process.platform);
 var LOG_DIRECTORY = "";
 var STARTUP_LOG = "";
 var CREDENTIAL_PATH = "";
 var quitRequested = false;
+var mainWindow = null;
 function canStoreCredentialsSecurely() {
-  if (!import_electron.safeStorage.isEncryptionAvailable()) return false;
-  if (process.platform !== "linux") return true;
-  const backend = import_electron.safeStorage.getSelectedStorageBackend();
-  return backend !== "basic_text" && backend !== "unknown";
+  const backend = process.platform === "linux" ? import_electron.safeStorage.getSelectedStorageBackend() : "unknown";
+  return canUseOsCredentialStore(process.platform, import_electron.safeStorage.isEncryptionAvailable(), backend);
 }
 function logStartupFailure(error) {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : "Unknown startup error";
@@ -179,6 +202,10 @@ async function createWindow() {
   });
   const backendPort = Number(process.env.CALCORA_RUNTIME_PORT);
   const rendererUrl = `http://127.0.0.1:${backendPort}/`;
+  mainWindow = window;
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+  });
   await window.loadURL(rendererUrl);
   window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedCalcoraRendererUrl(url, backendPort)) event.preventDefault();
@@ -205,37 +232,60 @@ async function startWithRecovery() {
         message: "The local Calcora service did not become ready, so the calculator window could not open.",
         detail: `A diagnostic entry was written to the Calcora logs folder:
 ${LOG_DIRECTORY}`,
-        buttons: ["Retry", "Open logs folder", "Quit"],
+        // Button order is fixed: the action is resolved from the response index,
+        // and macOS appends its own Cancel button, which must also end the loop.
+        buttons: describeRecoveryDialogButtons(process.platform),
         defaultId: 0,
-        cancelId: 2,
+        cancelId: describeRecoveryDialogButtons(process.platform).length - 1,
         noLink: true
       });
-      if (result.response === 2 || result.response === 3) {
+      const action = resolveRecoveryAction(result.response);
+      if (action === "quit") {
         import_electron.app.quit();
         return;
       }
-      if (result.response === 1) {
+      if (action === "open-logs") {
         await import_electron.shell.openPath(LOG_DIRECTORY);
       }
     }
   }
 }
-import_electron.app.whenReady().then(() => {
-  const userDataPath = import_electron.app.getPath("userData");
-  LOG_DIRECTORY = import_node_path.default.join(userDataPath, "logs");
-  STARTUP_LOG = import_node_path.default.join(LOG_DIRECTORY, "startup.log");
-  CREDENTIAL_PATH = getGeminiCredentialPath(userDataPath);
-  process.env.CALCORA_APP_ROOT = import_electron.app.getAppPath();
-  process.env[DESKTOP_GEMINI_ENV_KEY] = readStoredGeminiKey() ?? "";
-  registerGeminiCredentialHandlers();
-  return startWithRecovery();
-}).catch((error) => {
-  logStartupFailure(error);
-  return startWithRecovery();
-});
-import_electron.app.on("before-quit", () => {
-  quitRequested = true;
-});
-import_electron.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") import_electron.app.quit();
-});
+var isPrimaryInstance = import_electron.app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  import_electron.app.quit();
+} else {
+  import_electron.app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  import_electron.app.whenReady().then(() => {
+    const userDataPath = import_electron.app.getPath("userData");
+    LOG_DIRECTORY = import_node_path.default.join(userDataPath, "logs");
+    STARTUP_LOG = import_node_path.default.join(LOG_DIRECTORY, "startup.log");
+    CREDENTIAL_PATH = getGeminiCredentialPath(userDataPath);
+    process.env.CALCORA_APP_ROOT = import_electron.app.getAppPath();
+    process.env[DESKTOP_GEMINI_ENV_KEY] = readStoredGeminiKey() ?? "";
+    registerGeminiCredentialHandlers();
+    return startWithRecovery();
+  }).catch((error) => {
+    logStartupFailure(error);
+    return startWithRecovery();
+  });
+  import_electron.app.on("before-quit", () => {
+    quitRequested = true;
+  });
+  import_electron.app.on("window-all-closed", () => {
+    if (WINDOW_LIFECYCLE.quitWhenAllWindowsClosed) import_electron.app.quit();
+  });
+  import_electron.app.on("activate", () => {
+    if (!WINDOW_LIFECYCLE.recreateWindowOnActivate) return;
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+      return;
+    }
+    void startWithRecovery();
+  });
+}

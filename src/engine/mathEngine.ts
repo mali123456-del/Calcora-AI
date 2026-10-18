@@ -442,9 +442,18 @@ export function toRPN(tokens: Token[]): Token[] {
   return output;
 }
 
+class FiniteResultStack extends Array<number> {
+  override push(...values: number[]): number {
+    if (values.some((value) => !Number.isFinite(value))) {
+      throw new Error('Mathematical result is outside the finite number range');
+    }
+    return super.push(...values);
+  }
+}
+
 // Evaluate RPN expression
 export function evaluateRPN(rpn: Token[], angleMode: AngleMode = 'DEG'): number {
-  const stack: number[] = [];
+  const stack = new FiniteResultStack();
 
   for (const token of rpn) {
     if (token.type === 'NUMBER') {

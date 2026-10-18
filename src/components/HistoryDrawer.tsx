@@ -94,11 +94,11 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
 
       {/* Explanation Modal / Popup if clicked */}
       {activeExplainItem && (
-        <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs flex flex-col gap-2">
+        <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-xs flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-indigo-400" />
-              <span className="font-bold text-indigo-300">
+              <BookOpen className="w-4 h-4 text-cyan-400" />
+              <span className="font-bold text-cyan-300">
                 Step-by-Step Breakdown: {activeExplainItem.item.expression}
               </span>
             </div>
@@ -148,7 +148,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-500">
                   <div className="flex items-center gap-2">
                     <span>{dateStr}</span>
-                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[10px]">
+                    <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[11px]">
                       {item.angleMode}
                     </span>
                   </div>
@@ -158,7 +158,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                       type="button"
                       onClick={() => handleExplain(item)}
                       title="Explain calculation steps"
-                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-indigo-400"
+                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-cyan-400"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                     </button>

@@ -69,7 +69,22 @@ try {
   assert.equal(solved.verification.status, 'PASS', `expected PASS, got ${JSON.stringify(solved.verification)}`);
   assert.equal(solved.verification.method, 'substitute');
   assert.equal(solved.agent.bounded, true, 'the agent reports itself as bounded');
-  assert.deepEqual([...solved.agent.allowedTools].sort(), ['calculate', 'solveEquation']);
+  assert.deepEqual(
+    [...solved.agent.allowedTools].sort(),
+    ['calculate', 'derivative', 'solveEquation'],
+    'the agent allowlist is exactly the three deterministic math tools',
+  );
+
+  // ------------------------------------------------------------------
+  console.log('[1b] Math Agent: derivative goal is symbolic and verified');
+  const derived = await post('/api/ai/math-agent', { goal: 'Find the derivative of x^2' });
+  assert.equal(derived.success, true, `derivative goal must succeed: ${derived.explanation}`);
+  assert.equal(derived.deterministicResult, '2x', `d/dx(x^2) must be 2x, got ${derived.deterministicResult}`);
+  assert.equal(derived.deterministicVerified, true, `derivative must verify: ${JSON.stringify(derived.verification)}`);
+  assert.equal(derived.verification.status, 'PASS', `derivative must verify: ${JSON.stringify(derived.verification)}`);
+  assert.equal(derived.verification.method, 'spot-check', 'the derivative is checked by central-difference spot-check');
+  assert.match(derived.explanation, /d\/dx\(x\^2\) = 2x/, 'the explanation renders d/dx(x^2) = 2x');
+  assert.ok(!/x\^2 = 2x/.test(derived.explanation), 'the false equation "x^2 = 2x" never appears');
 
   // ------------------------------------------------------------------
   console.log('[2] Math Agent: off-topic goal produces no number');

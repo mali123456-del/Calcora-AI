@@ -156,7 +156,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-indigo-500" />
+            <BarChart3 className="w-5 h-5 text-cyan-500" />
             Statistics & Probability Lab
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -169,7 +169,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
             onClick={() => setActiveTab('descriptive')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeTab === 'descriptive'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -179,7 +179,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
             onClick={() => setActiveTab('regression')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeTab === 'regression'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -189,7 +189,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
             onClick={() => setActiveTab('probability')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeTab === 'probability'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -214,14 +214,14 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 rows={4}
                 value={rawInput}
                 onChange={(e) => setRawInput(e.target.value)}
-                className="w-full font-mono text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                className="w-full font-mono text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
               />
 
               <div className="flex gap-2 mt-3">
                 <button
                   id="stats-calc-btn"
                   onClick={handleComputeStats}
-                  className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2 shadow-xs"
+                  className="flex-1 py-2.5 px-4 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2 shadow-xs"
                 >
                   <Play className="w-4 h-4" />
                   Compute Statistics
@@ -250,7 +250,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                     />
                     <button
                       onClick={handleComputeZScore}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 transition-colors"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400 transition-colors"
                     >
                       Calculate Z
                     </button>
@@ -279,7 +279,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                   </div>
                   <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
                     <div className="text-[11px] text-slate-400">Mean (x̄)</div>
-                    <div className="text-xl font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    <div className="text-xl font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-0.5">
                       {statsResult.mean}
                     </div>
                   </div>
@@ -346,7 +346,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                   <div className="flex justify-end">
                     <button
                       onClick={() => onSendToCalculator(String(statsResult.mean))}
-                      className="text-xs text-indigo-500 hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs text-cyan-500 hover:underline flex items-center gap-1 font-semibold"
                     >
                       <span>Send Mean ({statsResult.mean}) to Scientific Calculator</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -379,13 +379,13 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 rows={6}
                 value={rawPairs}
                 onChange={(e) => setRawPairs(e.target.value)}
-                className="w-full font-mono text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                className="w-full font-mono text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-cyan-500"
               />
 
               <button
                 id="regression-calc-btn"
                 onClick={handleComputeRegression}
-                className="w-full mt-3 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2 shadow-xs"
+                className="w-full mt-3 py-2.5 px-4 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl font-semibold text-xs transition-colors flex items-center justify-center gap-2 shadow-xs"
               >
                 <TrendingUp className="w-4 h-4" />
                 Fit Linear Model
@@ -404,7 +404,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
               <div className="space-y-4">
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
                   <div className="text-xs text-slate-400">Best-Fit Equation</div>
-                  <div className="text-2xl font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                  <div className="text-2xl font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-1">
                     {regressionResult.equation}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs font-mono">
@@ -451,7 +451,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                           <tr key={i} className="border-b border-slate-100 dark:border-slate-800/60">
                             <td className="py-1.5">{r.x}</td>
                             <td className="py-1.5">{r.y}</td>
-                            <td className="py-1.5 text-indigo-500">{r.predicted}</td>
+                            <td className="py-1.5 text-cyan-500">{r.predicted}</td>
                             <td className="py-1.5 text-slate-500">{r.residual}</td>
                           </tr>
                         ))}
@@ -480,7 +480,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                   Permutations: nPr = n! / (n - r)!
                 </h3>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded-full border border-cyan-200 dark:border-cyan-800">
                   Order Matters
                 </span>
               </div>
@@ -511,7 +511,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
               <button
                 type="button"
                 onClick={handleComputePermutation}
-                className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors"
+                className="w-full py-2 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs transition-colors"
               >
                 Compute nPr
               </button>
@@ -520,7 +520,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                   <div className="text-xs text-slate-500">
                     <span className="font-semibold text-slate-700 dark:text-slate-300">{permN}P{permR} = </span>
-                    <span className="font-mono text-indigo-500 font-bold text-sm ml-1">{permResult.result}</span>
+                    <span className="font-mono text-cyan-500 font-bold text-sm ml-1">{permResult.result}</span>
                   </div>
                   {onSendToCalculator && (
                     <button
@@ -542,7 +542,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                   Combinations: nCr = n! / [r! (n - r)!]
                 </h3>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded-full border border-cyan-200 dark:border-cyan-800">
                   Order Does Not Matter
                 </span>
               </div>
@@ -573,7 +573,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
               <button
                 type="button"
                 onClick={handleComputeCombination}
-                className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors"
+                className="w-full py-2 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs transition-colors"
               >
                 Compute nCr
               </button>
@@ -582,7 +582,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                   <div className="text-xs text-slate-500">
                     <span className="font-semibold text-slate-700 dark:text-slate-300">{combN}C{combR} = </span>
-                    <span className="font-mono text-indigo-500 font-bold text-sm ml-1">{combResult.result}</span>
+                    <span className="font-mono text-cyan-500 font-bold text-sm ml-1">{combResult.result}</span>
                   </div>
                   {onSendToCalculator && (
                     <button
@@ -648,7 +648,7 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
               <button
                 type="button"
                 onClick={handleComputeBinomial}
-                className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors"
+                className="w-full py-2 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs transition-colors"
               >
                 Compute Binomial Distribution
               </button>
@@ -657,13 +657,13 @@ export const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ onSendToCalcul
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500 font-semibold">Exact P(X = {binomK}):</span>
-                    <span className="font-mono text-indigo-500 font-bold text-sm">
+                    <span className="font-mono text-cyan-500 font-bold text-sm">
                       {binomResult.exactProbability}
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-700 pt-2">
                     <span className="text-xs text-slate-500 font-semibold">Cumulative P(X ≤ {binomK}):</span>
-                    <span className="font-mono text-indigo-500 font-bold text-sm">
+                    <span className="font-mono text-cyan-500 font-bold text-sm">
                       {binomResult.cumulativeLessThanOrEqual}
                     </span>
                   </div>

@@ -53,21 +53,21 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
       name: '2D Graphing Lab',
       description: 'Plot multi-function curves, roots, intersections, and extrema.',
       icon: TrendingUp,
-      color: 'from-blue-500/20 to-indigo-500/20 text-blue-500 border-blue-500/30',
+      color: 'from-blue-500/20 to-cyan-500/20 text-blue-500 border-blue-500/30',
     },
     {
       id: 'equations' as ActiveTab,
       name: 'Equation Solver',
       description: 'Solve linear, quadratic, and systems with step derivations.',
       icon: Binary,
-      color: 'from-indigo-500/20 to-purple-500/20 text-indigo-500 border-indigo-500/30',
+      color: 'from-cyan-500/20 to-cyan-500/20 text-cyan-500 border-cyan-500/30',
     },
     {
       id: 'calculus' as ActiveTab,
       name: 'Calculus Workspace',
       description: 'Numerical derivatives, Simpson’s definite integrals, and limits.',
       icon: FunctionSquare,
-      color: 'from-purple-500/20 to-pink-500/20 text-purple-500 border-purple-500/30',
+      color: 'from-cyan-500/20 to-pink-500/20 text-cyan-500 border-cyan-500/30',
     },
     {
       id: 'matrix' as ActiveTab,
@@ -116,14 +116,14 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
       name: 'Formula Library',
       description: 'Comprehensive mathematical formulas with one-click calculator use.',
       icon: BookOpen,
-      color: 'from-indigo-500/20 to-cyan-500/20 text-indigo-400 border-indigo-500/30',
+      color: 'from-cyan-500/20 to-cyan-500/20 text-cyan-400 border-cyan-500/30',
     },
     {
       id: 'practice' as ActiveTab,
       name: 'Practice & Quizzes',
       description: 'Sharpen your mathematics skills with guided problem sets.',
       icon: Award,
-      color: 'from-purple-500/20 to-violet-500/20 text-purple-400 border-purple-500/30',
+      color: 'from-cyan-500/20 to-cyan-500/20 text-cyan-400 border-cyan-500/30',
     },
   ];
 
@@ -139,7 +139,7 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
   return (
     <div id="command-center-container" className="space-y-8 animate-in fade-in duration-200">
       {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-indigo-950/60 to-slate-900 border border-slate-800 shadow-2xl text-white">
+      <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-cyan-950/60 to-slate-900 border border-slate-800 shadow-2xl text-white">
         <div className="relative z-10 max-w-2xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-semibold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
@@ -164,9 +164,9 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('ai')}
-              className="px-4 py-2 text-xs font-bold rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/30 transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-cyan-700/30 hover:bg-cyan-700/50 text-cyan-200 border border-cyan-500/30 transition-colors flex items-center gap-2"
             >
-              <Sparkles className="w-4 h-4 text-purple-400" />
+              <Sparkles className="w-4 h-4 text-cyan-400" />
               <span>Open AI Tutor</span>
             </button>
             <button
@@ -174,7 +174,7 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
               onClick={onOpenWorkspaces}
               className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/60 transition-colors flex items-center gap-2"
             >
-              <FolderKanban className="w-4 h-4 text-indigo-400" />
+              <FolderKanban className="w-4 h-4 text-cyan-400" />
               <span>Workspaces</span>
             </button>
           </div>
@@ -256,10 +256,10 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
         const mistakes = loadSavedMistakes();
 
         return (
-          <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-950/40 via-indigo-950/30 to-slate-900 border border-purple-500/30 shadow-lg space-y-4">
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-cyan-950/40 via-cyan-950/30 to-slate-900 border border-cyan-500/30 shadow-lg space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-300 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 flex items-center justify-center">
                   <GraduationCap className="w-5 h-5" />
                 </div>
                 <div>
@@ -267,17 +267,17 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
                     <h3 className="text-sm font-bold text-white">
                       AI Mathematical Tutor 2.0
                     </h3>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                       Socratic Guided
                     </span>
                     {tutorStats.streakDays > 0 && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5">
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5">
                         <Flame className="w-3 h-3 text-amber-400" />
                         {tutorStats.streakDays}d Streak
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-purple-300/80">
+                  <p className="text-xs text-cyan-300/80">
                     Active goal: <strong className="text-white capitalize">{tutorSettings.learningObjective.replace('-', ' ')}</strong> • Target: <strong className="text-cyan-300 capitalize">{tutorSettings.topicOverride || 'Algebra'} ({tutorSettings.difficulty})</strong>
                   </p>
                 </div>
@@ -287,7 +287,7 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigateTab('ai')}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
                   <span>Resume Tutor Session</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -297,20 +297,20 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
 
             {/* Quick Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs">
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
-                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Learning Objective</span>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-cyan-500/20">
+                <span className="text-slate-400 text-[11px] uppercase font-bold tracking-wider block">Learning Objective</span>
                 <span className="text-slate-200 font-semibold mt-0.5 block capitalize">{tutorSettings.learningObjective.replace('-', ' ')}</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
-                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Current Topic</span>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-cyan-500/20">
+                <span className="text-slate-400 text-[11px] uppercase font-bold tracking-wider block">Current Topic</span>
                 <span className="text-cyan-300 font-semibold mt-0.5 block">{tutorSettings.topicOverride || 'Algebra'}</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
-                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Problems Solved</span>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-cyan-500/20">
+                <span className="text-slate-400 text-[11px] uppercase font-bold tracking-wider block">Problems Solved</span>
                 <span className="text-emerald-300 font-semibold mt-0.5 block">{tutorStats.totalCorrect} / {tutorStats.totalProblemsAttempted || 0}</span>
               </div>
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-purple-500/20">
-                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Recorded Mistakes</span>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-cyan-500/20">
+                <span className="text-slate-400 text-[11px] uppercase font-bold tracking-wider block">Recorded Mistakes</span>
                 <span className="text-amber-300 font-semibold mt-0.5 block">{mistakes.length} items to review</span>
               </div>
             </div>
@@ -319,18 +319,18 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
       })()}
 
       {/* AI Tutor Quick Actions */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-50/50 dark:from-purple-950/20 via-indigo-50/30 dark:via-indigo-950/20 to-transparent border border-purple-200/60 dark:border-purple-500/20 space-y-4">
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-cyan-50/50 dark:from-cyan-950/20 via-cyan-50/30 dark:via-cyan-950/20 to-transparent border border-cyan-200/60 dark:border-cyan-500/20 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <h3 className="text-sm font-bold text-purple-900 dark:text-purple-200">
+            <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            <h3 className="text-sm font-bold text-cyan-900 dark:text-cyan-200">
               AI Tutor & Voice Math Quick Prompts
             </h3>
           </div>
           <button
             type="button"
             onClick={() => onNavigateTab('ai')}
-            className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+            className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
           >
             Open Full Tutor →
           </button>
@@ -341,7 +341,7 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
             <div
               key={idx}
               onClick={() => onNavigateTab('ai')}
-              className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-purple-200 dark:border-purple-500/20 hover:border-purple-400 shadow-xs cursor-pointer transition-all flex flex-col justify-between"
+              className="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-cyan-200 dark:border-cyan-500/20 hover:border-cyan-400 shadow-xs cursor-pointer transition-all flex flex-col justify-between"
             >
               <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                 {p.title}
@@ -349,7 +349,7 @@ export const CommandCenterHome: React.FC<CommandCenterHomeProps> = ({
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
                 "{p.prompt}"
               </div>
-              <div className="text-[10px] font-bold text-purple-600 dark:text-purple-400 mt-2 flex items-center gap-1">
+              <div className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400 mt-2 flex items-center gap-1">
                 <span>Ask AI</span>
                 <ArrowRight className="w-3 h-3" />
               </div>

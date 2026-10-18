@@ -27,6 +27,14 @@ async function main() {
     assert.equal(health.headers.get('x-powered-by'), null);
     assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
 
+    // A strict CSP must accompany every production response: tutor answers, PDF
+    // text and OCR transcripts are all rendered into this same origin.
+    const servedCsp = health.headers.get('content-security-policy');
+    assert.ok(servedCsp, 'a production response must carry a Content-Security-Policy');
+    assert.ok(servedCsp.includes("default-src 'self'"), `CSP must default to self (got: ${servedCsp})`);
+    assert.ok(servedCsp.includes("object-src 'none'"), 'CSP must forbid plugins');
+    assert.ok(!servedCsp.includes('unsafe-eval'), 'CSP must not allow unsafe-eval');
+
     // Cross-origin abuse must be refused before any handler runs.
     const crossOrigin = await fetch(`${base}/api/ai/math`, {
       method: 'POST',

@@ -8,19 +8,26 @@ import {
   isTrustedCalcoraRendererUrl,
   resolveGeminiApiKey,
 } from './runtimeConfig';
+import {
+  canUseOsCredentialStore,
+  describeRecoveryDialogButtons,
+  getWindowLifecyclePolicy,
+  resolveRecoveryAction,
+} from './platformPolicy';
 
 Object.assign(process.env, getDesktopRuntimeEnvironment());
+
+const WINDOW_LIFECYCLE = getWindowLifecyclePolicy(process.platform);
 
 let LOG_DIRECTORY = '';
 let STARTUP_LOG = '';
 let CREDENTIAL_PATH = '';
 let quitRequested = false;
+let mainWindow: BrowserWindow | null = null;
 
 function canStoreCredentialsSecurely(): boolean {
-  if (!safeStorage.isEncryptionAvailable()) return false;
-  if (process.platform !== 'linux') return true;
-  const backend = safeStorage.getSelectedStorageBackend();
-  return backend !== 'basic_text' && backend !== 'unknown';
+  const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : 'unknown';
+  return canUseOsCredentialStore(process.platform, safeStorage.isEncryptionAvailable(), backend);
 }
 
 function logStartupFailure(error: unknown): void {
@@ -159,6 +166,10 @@ async function createWindow(): Promise<void> {
 
   const backendPort = Number(process.env.CALCORA_RUNTIME_PORT);
   const rendererUrl = `http://127.0.0.1:${backendPort}/`;
+  mainWindow = window;
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
   await window.loadURL(rendererUrl);
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedCalcoraRendererUrl(url, backendPort)) event.preventDefault();
@@ -186,42 +197,80 @@ async function startWithRecovery(): Promise<void> {
         title: 'Calcora AI could not start',
         message: 'The local Calcora service did not become ready, so the calculator window could not open.',
         detail: `A diagnostic entry was written to the Calcora logs folder:\n${LOG_DIRECTORY}`,
-        buttons: ['Retry', 'Open logs folder', 'Quit'],
+        // Button order is fixed: the action is resolved from the response index,
+        // and macOS appends its own Cancel button, which must also end the loop.
+        buttons: describeRecoveryDialogButtons(process.platform),
         defaultId: 0,
-        cancelId: 2,
+        cancelId: describeRecoveryDialogButtons(process.platform).length - 1,
         noLink: true,
       });
-      if (result.response === 2 || result.response === 3) {
+      const action = resolveRecoveryAction(result.response);
+      if (action === 'quit') {
         app.quit();
         return;
       }
-      if (result.response === 1) {
+      if (action === 'open-logs') {
         await shell.openPath(LOG_DIRECTORY);
       }
     }
   }
 }
 
-app.whenReady()
-  .then(() => {
-    const userDataPath = app.getPath('userData');
-    LOG_DIRECTORY = path.join(userDataPath, 'logs');
-    STARTUP_LOG = path.join(LOG_DIRECTORY, 'startup.log');
-    CREDENTIAL_PATH = getGeminiCredentialPath(userDataPath);
-    process.env.CALCORA_APP_ROOT = app.getAppPath();
-    process.env[DESKTOP_GEMINI_ENV_KEY] = readStoredGeminiKey() ?? '';
-    registerGeminiCredentialHandlers();
-    return startWithRecovery();
-  })
-  .catch((error: unknown) => {
-    logStartupFailure(error);
-    return startWithRecovery();
+/**
+ * One Calcora per desktop session.
+ *
+ * Without this lock, a second launch (double-clicking the shortcut, or an
+ * installer relaunch) starts a second backend that collides with the first
+ * one's port, which surfaces as the "could not start" recovery dialog instead of
+ * a second window. The lock is identical on Windows, macOS and Linux.
+ */
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   });
 
-app.on('before-quit', () => {
-  quitRequested = true;
-});
+  app.whenReady()
+    .then(() => {
+      const userDataPath = app.getPath('userData');
+      LOG_DIRECTORY = path.join(userDataPath, 'logs');
+      STARTUP_LOG = path.join(LOG_DIRECTORY, 'startup.log');
+      CREDENTIAL_PATH = getGeminiCredentialPath(userDataPath);
+      process.env.CALCORA_APP_ROOT = app.getAppPath();
+      process.env[DESKTOP_GEMINI_ENV_KEY] = readStoredGeminiKey() ?? '';
+      registerGeminiCredentialHandlers();
+      return startWithRecovery();
+    })
+    .catch((error: unknown) => {
+      logStartupFailure(error);
+      return startWithRecovery();
+    });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.on('before-quit', () => {
+    quitRequested = true;
+  });
+
+  app.on('window-all-closed', () => {
+    if (WINDOW_LIFECYCLE.quitWhenAllWindowsClosed) app.quit();
+  });
+
+  /**
+   * macOS convention: the app stays running with no window, and clicking the dock
+   * icon re-creates it. Windows and Linux quit with the last window instead, so
+   * there is nothing to re-activate there.
+   */
+  app.on('activate', () => {
+    if (!WINDOW_LIFECYCLE.recreateWindowOnActivate) return;
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+      return;
+    }
+    void startWithRecovery();
+  });
+}

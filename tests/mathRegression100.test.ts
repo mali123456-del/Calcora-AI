@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { calculateExpression } from '../src/engine/mathEngine';
 
-const cases: Array<[string, number, 'DEG'|'RAD'|'GRAD'?]> = [
+type TestCase = [string, number] | [string, number, 'DEG' | 'RAD' | 'GRAD'];
+
+const cases: TestCase[] = [
 ['1+1',2],['2+3',5],['10-7',3],['6*7',42],['81/9',9],['2^10',1024],['3^4',81],['144^0.5',12],['0.1+0.2',0.3],['5*(2+3)',25],
 ['2(3+4)',14],['3sin(30)',1.5],['sin(0)',0],['sin(90)',1],['cos(0)',1],['cos(180)',-1],['tan(45)',1],['sqrt(49)',7],['root(27,3)',3],['log(100)',2],
 ['ln(e)',1],['abs(-9)',9],['floor(3.9)',3],['ceil(3.1)',4],['round(3.5)',4],['ncr(5,2)',10],['npr(5,2)',20],['factorial(5)',120],['2^3^2',512],['(2+3)*4',20],
@@ -14,7 +16,8 @@ const cases: Array<[string, number, 'DEG'|'RAD'|'GRAD'?]> = [
 ['sin(30)',0.5],['cos(60)',0.5],['tan(30)',Math.tan(Math.PI/6)],['sin(90)',1],['cos(90)',0],['sin(180)',0],['cos(180)',-1],['tan(0)',0],['sin(45)',Math.SQRT1_2],['cos(45)',Math.SQRT1_2],
 ];
 
-for (const [expression, expected, angleMode] of cases) {
+for (const item of cases) {
+  const [expression, expected, angleMode] = item;
   const result = calculateExpression(expression, angleMode);
   assert.equal(result.error, undefined, expression);
   assert.ok(Math.abs(result.value - expected) < 1e-9, `${expression}: ${result.value} != ${expected}`);

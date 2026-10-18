@@ -1,17 +1,557 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+/*
+ * useTheme() has always written `classList.add('light')` on <html>, but Tailwind
+ * was never told what `light` means — so all 91 `light:*` classes in the codebase
+ * were silently dead and light mode fell back to the dark-mode styling. That is
+ * what left white keypad digits sitting on a translucent slate chip at ~2.3:1.
+ */
+@custom-variant light (&:where(.light, .light *));
+
+/* =========================================================================
+   CALCORA DESIGN TOKENS
+   One source of truth for colour, radius, elevation and type.
+   Components consume these instead of repeating ad-hoc slate/cyan/arbitrary
+   values, which is what made the surfaces drift apart.
+   Layer order (Tailwind v4): theme < base < components < utilities, so a
+   utility on an element always wins over a component class here.
+   ========================================================================= */
+:root {
+  color-scheme: light;
+
+  /* --- neutral surfaces (light). --cc-bg matches useTheme's body colour so
+         the page, cards and shell read as one surface in both themes. --- */
+  --cc-bg: #f8fafc;
+  --cc-surface: #ffffff;
+  --cc-surface-2: #f1f5f9;
+  --cc-surface-3: #e2e8f0;
+  --cc-overlay: rgba(15, 23, 42, 0.45);
+
+  /* --- lines --- */
+  --cc-border: #e2e8f0;
+  --cc-border-strong: #cbd5e1;
+
+  /* --- text ---
+     Each faint value is the lightest shade that still clears WCAG AA (4.5:1)
+     on its own worst-case surface: #5b6b80 is 4.86:1 on --cc-surface-2. */
+  --cc-text: #0f172a;
+  --cc-text-muted: #475569;
+  --cc-text-faint: #5b6b80;
+
+  /* --- single restrained accent (brand cyan) ---
+     cyan-600 (#0891b2) is only 3.68:1 on white, which fails AA for the 11-12px
+     chip, nav and segmented-control text that uses it. cyan-700 is 5.44:1, so
+     the accent is readable wherever it carries text. */
+  --cc-accent: #0e7490;
+  --cc-accent-hover: #155e75;
+  --cc-accent-fg: #ffffff;
+  /* --- accent tint used as a chip / active-item background.
+         Lowered from 0.10 to 0.07: the tint sits behind accent-coloured text,
+         so lightening it is what lifts that text over the AA line (4.47 -> 4.7
+         on --cc-chip-accent). --- */
+  --cc-accent-soft: rgba(14, 116, 144, 0.07);
+  --cc-accent-border: rgba(14, 116, 144, 0.32);
+  --cc-accent-ring: rgba(14, 116, 144, 0.45);
+
+  /* --- semantic status (status only, never decoration) ---
+     Shaded one step down from the -600 tones for the same reason: these always
+     sit on a tinted chip of themselves, which lowers the measured ratio. */
+  --cc-success: #047857;
+  --cc-success-soft: rgba(4, 120, 87, 0.12);
+  --cc-warning: #92400e;
+  --cc-warning-soft: rgba(146, 64, 14, 0.12);
+  --cc-danger: #dc2626;
+  --cc-danger-soft: rgba(220, 38, 38, 0.12);
+  --cc-info: #0369a1;
+  --cc-info-soft: rgba(3, 105, 161, 0.12);
+
+  /* --- radii --- */
+  --cc-radius-sm: 8px;
+  --cc-radius-md: 12px;
+  --cc-radius-lg: 16px;
+  --cc-radius-xl: 22px;
+
+  /* --- elevation --- */
+  --cc-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --cc-shadow-2: 0 4px 14px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --cc-shadow-3: 0 18px 40px rgba(15, 23, 42, 0.13), 0 4px 12px rgba(15, 23, 42, 0.06);
+
+  /* --- typography scale (never below 11px: small text is an a11y defect) --- */
+  --cc-fs-xs: 11px;
+  --cc-fs-sm: 12.5px;
+  --cc-fs-base: 14px;
+  --cc-fs-md: 15.5px;
+  --cc-fs-lg: 18px;
+  --cc-fs-xl: 24px;
+  --cc-fs-2xl: 32px;
+
+  /* --- rhythm --- */
+  --cc-gap: 16px;
+  --cc-pad-card: 18px;
+
+  --font-sans: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Syne', 'Segoe UI', system-ui, sans-serif;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --cc-bg: #020617;
+  --cc-surface: #0f172a;
+  --cc-surface-2: #1e293b;
+  --cc-surface-3: #273449;
+  --cc-overlay: rgba(2, 6, 23, 0.66);
+
+  --cc-border: #24324a;
+  --cc-border-strong: #334155;
+
+  --cc-text: #f8fafc;
+  --cc-text-muted: #94a3b8;
+  /* #64748b measured 4.24:1 on --cc-surface and 4.19:1 on --cc-surface-2,
+     below AA for 11px labels. #8795ac is 4.82:1 on the worst of the two. */
+  --cc-text-faint: #8795ac;
+
+  --cc-accent: #22d3ee;
+  --cc-accent-hover: #67e8f9;
+  --cc-accent-fg: #062027;
+  --cc-accent-soft: rgba(34, 211, 238, 0.12);
+  --cc-accent-border: rgba(34, 211, 238, 0.34);
+  --cc-accent-ring: rgba(34, 211, 238, 0.50);
+
+  --cc-success: #34d399;
+  --cc-success-soft: rgba(52, 211, 153, 0.14);
+  --cc-warning: #fbbf24;
+  --cc-warning-soft: rgba(251, 191, 36, 0.14);
+  --cc-danger: #f87171;
+  --cc-danger-soft: rgba(248, 113, 113, 0.14);
+  --cc-info: #7dd3fc;
+  --cc-info-soft: rgba(125, 211, 252, 0.14);
+
+  --cc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --cc-shadow-2: 0 4px 14px rgba(0, 0, 0, 0.44), 0 1px 3px rgba(0, 0, 0, 0.30);
+  --cc-shadow-3: 0 18px 40px rgba(0, 0, 0, 0.58), 0 4px 12px rgba(0, 0, 0, 0.36);
+}
 
 @layer base {
-  :root {
-    --font-sans: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
-    --font-display: 'Syne', 'Segoe UI', system-ui, sans-serif;
-  }
-
   body {
     font-family: var(--font-sans);
     min-height: 100vh;
     overflow-x: hidden;
+    background: var(--cc-bg);
+    color: var(--cc-text);
+    font-size: var(--cc-fs-base);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    font-weight: 700;
+    letter-spacing: -0.011em;
+    line-height: 1.25;
+  }
+
+  /* Keyboard focus is always visible and never clipped. */
+  :focus-visible {
+    outline: 2px solid var(--cc-accent-ring);
+    outline-offset: 2px;
+    border-radius: var(--cc-radius-sm);
+  }
+
+  /* A disabled control must read as disabled, not merely look pale. */
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  ::selection {
+    background: var(--cc-accent-soft);
+  }
+}
+
+@layer components {
+  /* ---- surfaces ---- */
+  .cc-card {
+    background: var(--cc-surface);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-radius-lg);
+    box-shadow: var(--cc-shadow-1);
+  }
+  .cc-card-quiet {
+    background: var(--cc-surface-2);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-radius-md);
+  }
+  .cc-divider {
+    border-color: var(--cc-border);
+  }
+
+  /* ---- buttons ---- */
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: var(--cc-fs-sm);
+    font-weight: 600;
+    line-height: 1;
+    padding: 8px 12px;
+    border-radius: var(--cc-radius-md);
+    border: 1px solid var(--cc-border-strong);
+    background: var(--cc-surface);
+    color: var(--cc-text);
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease,
+      color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+    white-space: nowrap;
+  }
+  .cc-btn:hover:not(:disabled) {
+    background: var(--cc-surface-2);
+    border-color: var(--cc-border-strong);
+  }
+  .cc-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .cc-btn-primary {
+    background: var(--cc-accent);
+    border-color: var(--cc-accent);
+    color: var(--cc-accent-fg);
+    box-shadow: var(--cc-shadow-1);
+  }
+  .cc-btn-primary:hover:not(:disabled) {
+    background: var(--cc-accent-hover);
+    border-color: var(--cc-accent-hover);
+  }
+  .cc-btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--cc-text-muted);
+  }
+  .cc-btn-ghost:hover:not(:disabled) {
+    background: var(--cc-surface-2);
+    color: var(--cc-text);
+  }
+  .cc-btn-active {
+    background: var(--cc-accent-soft);
+    border-color: var(--cc-accent-border);
+    color: var(--cc-accent);
+  }
+
+  /* ---- chips / badges ---- */
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--cc-fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--cc-border);
+    background: var(--cc-surface-2);
+    color: var(--cc-text-muted);
+    white-space: nowrap;
+  }
+  .cc-chip-accent { background: var(--cc-accent-soft); border-color: var(--cc-accent-border); color: var(--cc-accent); }
+  .cc-chip-success { background: var(--cc-success-soft); border-color: color-mix(in srgb, var(--cc-success) 35%, transparent); color: var(--cc-success); }
+  .cc-chip-warning { background: var(--cc-warning-soft); border-color: color-mix(in srgb, var(--cc-warning) 35%, transparent); color: var(--cc-warning); }
+  .cc-chip-danger  { background: var(--cc-danger-soft);  border-color: color-mix(in srgb, var(--cc-danger) 35%, transparent);  color: var(--cc-danger); }
+  .cc-chip-info    { background: var(--cc-info-soft);    border-color: color-mix(in srgb, var(--cc-info) 35%, transparent);    color: var(--cc-info); }
+
+  /* ---- typography ---- */
+  .cc-eyebrow {
+    font-size: var(--cc-fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--cc-text-faint);
+  }
+  .cc-muted { color: var(--cc-text-muted); }
+  .cc-faint { color: var(--cc-text-faint); }
+
+  /* ---- form controls ---- */
+  .cc-input {
+    background: var(--cc-surface);
+    border: 1px solid var(--cc-border-strong);
+    border-radius: var(--cc-radius-md);
+    padding: 9px 12px;
+    font-size: var(--cc-fs-base);
+    color: var(--cc-text);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+    min-width: 0;
+  }
+  .cc-input::placeholder { color: var(--cc-text-faint); }
+  .cc-input:hover:not(:disabled) { border-color: var(--cc-accent-border); }
+  .cc-input:focus {
+    outline: none;
+    border-color: var(--cc-accent);
+    box-shadow: 0 0 0 3px var(--cc-accent-soft);
+  }
+
+  /* ---- navigation ---- */
+  .cc-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--cc-fs-sm);
+    font-weight: 600;
+    color: var(--cc-text-muted);
+    padding: 7px 11px;
+    border-radius: var(--cc-radius-md);
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  }
+  .cc-nav-item:hover {
+    background: var(--cc-surface-2);
+    color: var(--cc-text);
+  }
+  .cc-nav-item[aria-current='page'] {
+    background: var(--cc-accent-soft);
+    border-color: var(--cc-accent-border);
+    color: var(--cc-accent);
+  }
+  .cc-nav-item[aria-current='page'] .cc-nav-icon {
+    color: var(--cc-accent);
+  }
+  .cc-nav-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    color: var(--cc-text-faint);
+    transition: color 140ms ease;
+  }
+  .cc-nav-item:hover .cc-nav-icon { color: var(--cc-text); }
+
+  /* A labelled cluster inside the module rail. Keeps 19 modules grouped
+     instead of reading as one undifferentiated row of pills. */
+  .cc-nav-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    padding-right: 10px;
+    margin-right: 2px;
+    border-right: 1px solid var(--cc-border);
+  }
+  .cc-nav-group:last-child { border-right: none; padding-right: 0; }
+  .cc-nav-group-label {
+    font-size: var(--cc-fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--cc-text-faint);
+    padding: 0 4px 0 6px;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  /* ---- segmented control (angle mode, theme) ---- */
+  .cc-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    background: var(--cc-surface-2);
+    border: 1px solid var(--cc-border);
+    border-radius: 10px;
+  }
+  .cc-seg-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--cc-text-muted);
+    font-size: var(--cc-fs-xs);
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  }
+  .cc-seg-btn:hover { color: var(--cc-text); background: var(--cc-surface-3); }
+  .cc-seg-btn[aria-pressed='true'] {
+    background: var(--cc-surface);
+    color: var(--cc-accent);
+    box-shadow: inset 0 0 0 1px var(--cc-accent-border), var(--cc-shadow-1);
+  }
+  .cc-seg-btn svg { width: 14px; height: 14px; }
+
+  /* Vertical hairline separating toolbar clusters. */
+  .cc-vrule {
+    width: 1px;
+    height: 22px;
+    background: var(--cc-border);
+    flex: none;
+    margin: 0 3px;
+  }
+
+  /* Brand mark: one solid accent tile instead of a cyan→indigo→purple wash. */
+  .cc-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    background: var(--cc-accent);
+    color: var(--cc-accent-fg);
+    box-shadow: var(--cc-shadow-2);
+    transition: transform 160ms ease;
+  }
+  .cc-logo svg { width: 19px; height: 19px; }
+  .cc-logo-btn:hover .cc-logo { transform: translateY(-1px); }
+  .cc-logo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px;
+    margin-left: -3px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: var(--cc-radius-md);
+    text-align: left;
+  }
+
+  /* ---- tiles, section heads, hero ---- */
+  .cc-icon-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-accent-soft);
+    border: 1px solid var(--cc-accent-border);
+    color: var(--cc-accent);
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .cc-icon-tile svg { width: 19px; height: 19px; }
+
+  .cc-card-hover {
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+  .cc-card-hover:hover {
+    border-color: var(--cc-accent-border);
+    box-shadow: var(--cc-shadow-2);
+    transform: translateY(-2px);
+  }
+  .cc-card-hover:hover .cc-icon-tile {
+    background: var(--cc-accent);
+    border-color: var(--cc-accent);
+    color: var(--cc-accent-fg);
+  }
+
+  .cc-section-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .cc-section-head h2 {
+    font-size: var(--cc-fs-lg);
+    color: var(--cc-text);
+    margin: 0;
+  }
+  .cc-section-head p {
+    font-size: var(--cc-fs-sm);
+    color: var(--cc-text-muted);
+    margin: 3px 0 0;
+  }
+
+  /* One restrained accent wash, not three stacked radial gradients. */
+  .cc-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--cc-radius-xl);
+    border: 1px solid var(--cc-accent-border);
+    background:
+      radial-gradient(130% 150% at 0% 0%, var(--cc-accent-soft), transparent 58%),
+      var(--cc-surface);
+    box-shadow: var(--cc-shadow-3);
+    padding: 26px 24px;
+    color: var(--cc-text);
+  }
+  .cc-hero h2 {
+    font-size: var(--cc-fs-2xl);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .cc-hero p { color: var(--cc-text-muted); }
+
+  .cc-stat {
+    border-radius: var(--cc-radius-md);
+    border: 1px solid var(--cc-border);
+    background: var(--cc-surface-2);
+    padding: 10px 12px;
+  }
+  .cc-stat b {
+    display: block;
+    font-size: var(--cc-fs-lg);
+    font-weight: 800;
+    color: var(--cc-text);
+    line-height: 1.2;
+  }
+  .cc-stat span {
+    display: block;
+    font-size: var(--cc-fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--cc-text-faint);
+    margin-top: 2px;
+  }
+
+  /* ---- states every screen must be able to render ---- */
+  .cc-empty {
+    background: var(--cc-surface-2);
+    border: 1px dashed var(--cc-border-strong);
+    border-radius: var(--cc-radius-lg);
+    padding: 26px 18px;
+    text-align: center;
+    color: var(--cc-text-muted);
+  }
+  .cc-error {
+    background: var(--cc-danger-soft);
+    border: 1px solid color-mix(in srgb, var(--cc-danger) 38%, transparent);
+    color: var(--cc-danger);
+    border-radius: var(--cc-radius-md);
+    padding: 11px 13px;
+    font-size: var(--cc-fs-sm);
+    font-weight: 600;
+  }
+  .cc-loading {
+    background: var(--cc-surface-3);
+    border-radius: var(--cc-radius-sm);
+    position: relative;
+    overflow: hidden;
+  }
+  .cc-loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--cc-accent-soft), transparent);
+    animation: cc-shimmer 1.3s infinite;
+  }
+  @keyframes cc-shimmer {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(100%); }
   }
 }
 
@@ -26,20 +566,19 @@
 
 /* Custom scrollbar for mathematical expressions and panels */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
+  background: rgba(148, 163, 184, 0.28);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.5);
 }
-
 
 /* Calcora Lean Mode: reduce animation/paint cost on low-RAM devices. */
 html[data-calcora-lean='true'] *,

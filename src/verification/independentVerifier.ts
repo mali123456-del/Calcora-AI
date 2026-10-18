@@ -22,6 +22,7 @@
 
 import { calculateExpression } from '../engine/mathEngine';
 import { toolSolveEquation } from '../engine/toolLayer';
+import { evaluateAt } from '../engine/symbolicDerivative';
 import { evaluateExact, rationalsEqual, rationalToDecimalString, rationalToNumber } from './exactArithmetic';
 import {
   unavailable,
@@ -219,6 +220,67 @@ export function verifyConceptual(_subject: string): VerificationOutcome {
 }
 
 /**
+ * Verify a claimed derivative function f'(x) against the source expression f(x).
+ *
+ * Strategy: numerical spot-check. The reported derivative is evaluated at
+ * several sample points and compared with a central difference of the source
+ * expression. The claim was produced by SYMBOLIC differentiation and this
+ * check is NUMERICAL, so the two code paths are independent: a wrong rule
+ * (say, cos' = sin) cannot agree with a central difference everywhere.
+ *
+ * Sample points outside the domain are skipped. If no point can be evaluated
+ * the outcome is UNVERIFIED (nothing was checked), never VERIFIED.
+ */
+export function verifyDerivative(sourceExpression: string, reportedDerivative: string): VerificationOutcome {
+  if (!sourceExpression.trim() || !reportedDerivative.trim()) {
+    return unverified('The derivative claim or its source expression was empty, so there is nothing to check.');
+  }
+  const h = 1e-4;
+  const points = [0.7, 1.3, -1.1, 2.5, -0.4, 3.9];
+  let checked = 0;
+  let matched = 0;
+  const disagreements: string[] = [];
+  for (const point of points) {
+    try {
+      const claimed = evaluateAt(reportedDerivative, 'x', point);
+      const plus = evaluateAt(sourceExpression, 'x', point + h);
+      const minus = evaluateAt(sourceExpression, 'x', point - h);
+      const observed = (plus - minus) / (2 * h);
+      if (!Number.isFinite(claimed) || !Number.isFinite(observed)) continue;
+      const tolerance = 1e-4 * Math.max(1, Math.abs(claimed), Math.abs(observed));
+      checked += 1;
+      if (Math.abs(claimed - observed) <= tolerance) {
+        matched += 1;
+      } else {
+        disagreements.push(`x=${point}: claimed ${claimed}, numerically observed ${observed}`);
+      }
+    } catch {
+      continue;
+    }
+  }
+  if (checked === 0) {
+    return unverified(
+      'The derivative spot-check could not evaluate either the source expression or the reported '
+      + 'derivative at any sample point, so the claim was not confirmed or refuted.',
+    );
+  }
+  if (matched === checked) {
+    return verifiedBy(
+      'recompute',
+      `Numerical spot-check (central difference of ${sourceExpression}) agreed with the reported derivative at all ${checked} sample points.`,
+      reportedDerivative,
+      `${reportedDerivative} (numerical agreement at ${checked} points)`,
+    );
+  }
+  return failedVerification(
+    'recompute',
+    `The reported derivative disagrees with numerical differentiation of ${sourceExpression}: ${disagreements.join('; ')}.`,
+    reportedDerivative,
+    disagreements[0] ?? null,
+  );
+}
+
+/**
  * The deterministic engine has no capability for this request.
  *
  * Used for out-of-domain questions and for engine failures. The system states that
@@ -236,7 +298,7 @@ export function verifyUnsupported(_request: string): VerificationOutcome {
  * deterministic stage actually produced, and never invent a state.
  */
 export function verifyDeterministicOutcome(input: {
-  kind: 'calculation' | 'equation' | 'conceptual' | 'unsupported';
+  kind: 'calculation' | 'equation' | 'derivative' | 'conceptual' | 'unsupported';
   expression?: string | null;
   result?: string | null;
   roots?: readonly string[];
@@ -249,6 +311,9 @@ export function verifyDeterministicOutcome(input: {
   }
   if (input.kind === 'equation') {
     return verifyEquation(input.expression ?? '', input.roots ?? []);
+  }
+  if (input.kind === 'derivative') {
+    return verifyDerivative(input.expression ?? '', input.result ?? '');
   }
   return verifyCalculation(input.expression ?? '', input.result ?? null);
 }

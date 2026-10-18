@@ -17,6 +17,7 @@ import VerificationBadge from './VerificationBadge';
 import type { PrivacyMode } from '../ai/offlinePolicy';
 import { activeDocumentToContext } from '../services/activeDocument';
 import { resolveSpeechRecognitionLocale } from '../services/speechInput';
+import { shouldAutoCalculateFromPrompt } from '../services/autoCalculateIntent';
 import { DesktopGeminiSettings } from './DesktopGeminiSettings';
 import { loadTutorConversationState, appendTutorMessage, setTutorMode as persistTutorMode, updateTutorProblemContext } from '../services/tutorConversationService';
 import {
@@ -89,7 +90,6 @@ import {
 } from '../utils/aiExport';
 import {
   buildQuickPrompt,
-  getQuickPromptProfile,
   QuickPromptType,
   QUICK_PROMPT_ITEMS,
 } from '../utils/aiQuickPrompts';
@@ -189,7 +189,7 @@ export const MathMarkdownRenderer: React.FC<{ content: string; className?: strin
         components={{
           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
           strong: ({ children }) => (
-            <strong className="font-bold text-purple-300 dark:text-purple-300 light:text-purple-800">
+            <strong className="font-bold text-cyan-300 dark:text-cyan-300 light:text-cyan-800">
               {children}
             </strong>
           ),
@@ -204,14 +204,14 @@ export const MathMarkdownRenderer: React.FC<{ content: string; className?: strin
             </code>
           ),
           ul: ({ children }) => (
-            <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-purple-400">{children}</ul>
+            <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-cyan-400">{children}</ul>
           ),
           ol: ({ children }) => (
             <ol className="list-decimal pl-5 mb-2 space-y-1 marker:text-cyan-400">{children}</ol>
           ),
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-purple-500 pl-3 italic text-slate-300 my-2">
+            <blockquote className="border-l-2 border-cyan-500 pl-3 italic text-slate-300 my-2">
               {children}
             </blockquote>
           ),
@@ -450,7 +450,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, []);
 
   // Send message handler with input sanitization and Tutor parameters
-  const handleSend = async (textToSend?: string, requestOverrides: { responseProfile?: 'quick' | 'deep' | 'balanced' } = {}) => {
+  const handleSend = async (textToSend?: string) => {
     const rawText = textToSend !== undefined ? textToSend : inputPrompt;
     const sanitized = sanitizeQueryText(rawText);
 
@@ -608,7 +608,6 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           groundedConcepts: retrievedKnowledge.map((result) => result.item.concept),
           audienceProfile,
           language: tutorLanguage,
-          responseProfile: requestOverrides.responseProfile,
           privacyMode: attachedDocument ? 'offline' : privacyMode,
           localModelId: selectedLocalModelId || undefined,
         }
@@ -616,14 +615,16 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       // If the AI extracted a calculator-ready expression for an explicit
       // calculation request, run it through the deterministic calculator too.
-      // Never auto-execute expressions for explanation/proof/teaching requests.
-      if (
-        onAutoCalculate &&
-        !automaticCalculation &&
-        response.expression &&
-        /\b(calculate|compute|evaluate|what is|what's|find)\b/i.test(sanitized)
-      ) {
-        onAutoCalculate(response.expression);
+      // Never auto-execute expressions for explanation/proof/teaching requests, and never
+      // for calculus ones: auto-calculating "Find the derivative of x^2" used to navigate the
+      // user out of this panel and unmount the answer they were reading.
+      const autoCalculableExpression = response.expression
+        ? shouldAutoCalculateFromPrompt(sanitized, response.expression)
+          ? response.expression
+          : undefined
+        : undefined;
+      if (onAutoCalculate && !automaticCalculation && autoCalculableExpression) {
+        onAutoCalculate(autoCalculableExpression);
       }
 
       const assistantMsg: AIMessage = {
@@ -953,7 +954,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (type === 'explain-step' && targetStep) {
       // Direct per-step explanation
       const promptText = buildQuickPrompt(type, { targetStep });
-      handleSend(promptText, { responseProfile: getQuickPromptProfile(type) });
+      handleSend(promptText);
       return;
     }
 
@@ -971,7 +972,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       targetStep,
       lastAssistantMessage,
     });
-    handleSend(promptText, { responseProfile: getQuickPromptProfile(type) });
+    handleSend(promptText);
   };
 
   // ---------------------------------------------------------------------------
@@ -1142,16 +1143,16 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   return (
     <div className="w-full flex flex-col gap-4">
       {/* Top Header & Tutor Mode Switcher */}
-      <div className="flex flex-col gap-3 p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-slate-900/60 border border-purple-500/20 backdrop-blur-xs shadow-md">
+      <div className="flex flex-col gap-3 p-4 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-cyan-950/30 to-slate-900/60 border border-cyan-500/20 backdrop-blur-xs shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shadow-inner">
               {tutorMode === 'tutor' ? (
-                <GraduationCap className="w-5 h-5 text-purple-300" />
+                <GraduationCap className="w-5 h-5 text-cyan-300" />
               ) : tutorMode === 'solver-review' ? (
                 <Search className="w-5 h-5 text-cyan-300" />
               ) : (
-                <Sparkles className="w-5 h-5 text-purple-300" />
+                <Sparkles className="w-5 h-5 text-cyan-300" />
               )}
             </div>
             <div>
@@ -1159,18 +1160,18 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <h2 className="font-display-math font-bold text-base text-white dark:text-white light:text-slate-900">
                   AI Mathematical Tutor Mode 2.0
                 </h2>
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  <Brain className="w-3 h-3 text-purple-400" />
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                  <Brain className="w-3 h-3 text-cyan-400" />
                   Socratic Guided
                 </span>
                 {tutorStats.streakDays > 0 && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                     <Flame className="w-3 h-3 text-amber-400" />
                     {tutorStats.streakDays}d Streak
                   </span>
                 )}
               </div>
-              <p className="text-xs text-purple-300/80">
+              <p className="text-xs text-cyan-300/80">
                 Interactive Socratic tutoring, 5-level hints, deterministic step checking & error discovery.
               </p>
             </div>
@@ -1198,7 +1199,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium transition-all shadow-xs ${
                 isExported
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                  : 'bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/30 text-purple-300 hover:text-white'
+                  : 'bg-cyan-500/10 hover:bg-cyan-800/20 border-cyan-500/30 text-cyan-300 hover:text-white'
               }`}
               title="Export conversation history and explanations to Markdown (.md)"
             >
@@ -1209,7 +1210,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 </>
               ) : (
                 <>
-                  <Download className="w-3.5 h-3.5 text-purple-400" />
+                  <Download className="w-3.5 h-3.5 text-cyan-400" />
                   <span>Export</span>
                 </>
               )}
@@ -1229,7 +1230,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
 
         {/* Mode Selector & Pedagogy Controls Bar */}
-        <div className="flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-3 pt-3 border-t border-purple-500/20">
+        <div className="flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-3 pt-3 border-t border-cyan-500/20">
           {/* 1. TUTOR MODE SWITCH: Assistant vs Tutor vs Solver Review */}
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/60 border border-slate-800/80 shrink-0">
             <button
@@ -1238,7 +1239,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               onClick={() => changeTutorMode('assistant')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                 tutorMode === 'assistant'
-                  ? 'bg-purple-600 text-white shadow-sm'
+                  ? 'bg-cyan-700 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -1251,7 +1252,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               onClick={() => changeTutorMode('tutor')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                 tutorMode === 'tutor'
-                  ? 'bg-purple-600 text-white shadow-sm'
+                  ? 'bg-cyan-700 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -1264,7 +1265,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               onClick={() => changeTutorMode('solver-review')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                 tutorMode === 'solver-review'
-                  ? 'bg-purple-600 text-white shadow-sm'
+                  ? 'bg-cyan-700 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -1310,7 +1311,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               ))}
             </select>
           </label>
-          <p id="tutor-local-model-status" role="status" aria-live="polite" className="basis-full text-[10px] leading-4 text-slate-400">
+          <p id="tutor-local-model-status" role="status" aria-live="polite" className="basis-full text-[11px] leading-4 text-slate-400">
             {localModelStatusError
               || (!localModelStatus
                 ? 'Checking for local GGUF models…'
@@ -1373,7 +1374,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value as DifficultyLevel)}
-                className="bg-transparent text-purple-300 font-semibold focus:outline-none cursor-pointer text-xs capitalize"
+                className="bg-transparent text-cyan-300 font-semibold focus:outline-none cursor-pointer text-xs capitalize"
               >
                 <option value="beginner" className="bg-slate-900 text-white">
                   Beginner
@@ -1426,12 +1427,12 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               onClick={() => setSocraticMode(!socraticMode)}
               className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
                 socraticMode
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-xs'
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-xs'
                   : 'bg-slate-900/60 text-slate-400 border-slate-800'
               }`}
               title="When enabled, tutor asks guided questions rather than solving upfront"
             >
-              <Brain className={`w-3.5 h-3.5 ${socraticMode ? 'text-purple-400' : 'text-slate-500'}`} />
+              <Brain className={`w-3.5 h-3.5 ${socraticMode ? 'text-cyan-400' : 'text-slate-500'}`} />
               <span>Socratic: {socraticMode ? 'ON' : 'OFF'}</span>
             </button>
 
@@ -1441,7 +1442,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 id="btn-start-practice"
                 type="button"
                 onClick={() => handleStartPractice(false)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-700 hover:bg-cyan-500 text-slate-950 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
                 title="Generate and solve validated practice problems for the current topic"
               >
                 <Play className="w-3 h-3 fill-slate-950" />
@@ -1464,7 +1465,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* ACTIVE PRACTICE SESSION OR EXAM RUNNER */}
       {practiceSession && practiceSession.isActive && (
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border-2 border-cyan-500/30 shadow-xl space-y-4">
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-cyan-950/40 to-slate-900 border-2 border-cyan-500/30 shadow-xl space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
@@ -1503,7 +1504,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               {/* Question card */}
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">
                     {practiceSession.problems[practiceSession.currentIndex]?.topic} (
                     {practiceSession.problems[practiceSession.currentIndex]?.difficultyTier})
                   </span>
@@ -1522,22 +1523,22 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
               {/* Hints Drawer (if not exam mode) */}
               {!practiceSession.isExamMode && (
-                <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/20 space-y-2">
+                <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-purple-300 flex items-center gap-1">
-                      <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="font-semibold text-cyan-300 flex items-center gap-1">
+                      <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
                       {HINT_LEVEL_DESCRIPTIONS[hintLevel].title}
                     </span>
                     <button
                       type="button"
                       onClick={handleGiveHint}
                       disabled={hintLevel >= 5}
-                      className="text-xs text-purple-300 hover:text-purple-100 font-bold underline disabled:opacity-40"
+                      className="text-xs text-cyan-300 hover:text-cyan-100 font-bold underline disabled:opacity-40"
                     >
                       {hintLevel < 5 ? 'Need Stronger Hint →' : 'Full Solution Revealed'}
                     </button>
                   </div>
-                  <div className="text-xs text-slate-300 italic bg-purple-950/30 p-2.5 rounded-lg">
+                  <div className="text-xs text-slate-300 italic bg-cyan-950/30 p-2.5 rounded-lg">
                     <MathMarkdownRenderer content={activeHints[hintLevel - 1]} />
                   </div>
                 </div>
@@ -1559,7 +1560,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   type="button"
                   onClick={handleCheckPracticeAnswer}
                   disabled={!practiceAnswerInput.trim()}
-                  className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-slate-950 font-bold text-xs transition-all shadow-sm"
+                  className="px-4 py-2.5 rounded-xl bg-cyan-700 hover:bg-cyan-500 disabled:opacity-40 text-slate-950 font-bold text-xs transition-all shadow-sm"
                 >
                   Check Answer
                 </button>
@@ -1614,7 +1615,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleStartPractice(practiceSession.isExamMode)}
-                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs"
+                  className="px-4 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-500 text-slate-950 font-bold text-xs"
                 >
                   Try Another Set
                 </button>
@@ -1635,17 +1636,17 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       {tutorMode === 'tutor' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
           {/* Active Problem / Context Banner (Full width across cols) */}
-          <div className="lg:col-span-12 p-3.5 rounded-xl bg-gradient-to-r from-purple-950/40 to-slate-900/60 border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+          <div className="lg:col-span-12 p-3.5 rounded-xl bg-gradient-to-r from-cyan-950/40 to-slate-900/60 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider">
+              <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">
                 Active Tutoring Target:
               </span>
-              <span className="text-xs font-mono font-bold text-white bg-slate-950/60 px-2.5 py-1 rounded-lg border border-purple-500/20">
+              <span className="text-xs font-mono font-bold text-white bg-slate-950/60 px-2.5 py-1 rounded-lg border border-cyan-500/20">
                 {activeProblem}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
+              <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
                 <CheckCircle className="w-3 h-3 text-emerald-400" />
                 Verified Math Engine
               </span>
@@ -1653,7 +1654,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => onApplyToCalculator(currentExpression)}
-                  className="text-[10px] text-cyan-300 hover:underline font-mono"
+                  className="text-[11px] text-cyan-300 hover:underline font-mono"
                 >
                   Sync to Calc
                 </button>
@@ -1666,8 +1667,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-bold text-purple-300">Progressive Hint System</span>
+                  <BookOpen className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs font-bold text-cyan-300">Progressive Hint System</span>
                 </div>
                 <span className="text-[11px] font-mono text-slate-400">
                   Level {hintLevel} / 5
@@ -1683,7 +1684,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     onClick={() => setHintLevel(lvl as HintLevel)}
                     className={`h-2 rounded-full transition-all ${
                       lvl <= hintLevel
-                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                        ? 'bg-gradient-to-r from-cyan-500 to-cyan-500'
                         : 'bg-slate-800 hover:bg-slate-700'
                     }`}
                     title={HINT_LEVEL_DESCRIPTIONS[lvl as HintLevel].title}
@@ -1692,8 +1693,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               </div>
 
               {/* Active Hint Content */}
-              <div className="p-3 rounded-lg bg-slate-950/60 border border-purple-500/20 text-xs text-slate-200 min-h-[70px] flex flex-col justify-center">
-                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-1">
+              <div className="p-3 rounded-lg bg-slate-950/60 border border-cyan-500/20 text-xs text-slate-200 min-h-[70px] flex flex-col justify-center">
+                <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider mb-1">
                   {HINT_LEVEL_DESCRIPTIONS[hintLevel].title}
                 </span>
                 <MathMarkdownRenderer content={activeHints[hintLevel - 1]} />
@@ -1707,7 +1708,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 type="button"
                 onClick={handleGiveHint}
                 disabled={hintLevel >= 5}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 transition-all flex items-center gap-1 shadow-xs active:scale-95"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-700 hover:bg-cyan-800 text-white disabled:opacity-40 transition-all flex items-center gap-1 shadow-xs active:scale-95"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
                 <span>{hintLevel === 1 ? 'Give me a Hint' : 'Next Hint'}</span>
@@ -1743,7 +1744,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   <CheckCircle2 className="w-4 h-4 text-cyan-400" />
                   <span className="text-xs font-bold text-cyan-300">Check My Step</span>
                 </div>
-                <span className="text-[10px] text-slate-400">Deterministic verification</span>
+                <span className="text-[11px] text-slate-400">Deterministic verification</span>
               </div>
 
               {/* Step Input */}
@@ -1764,7 +1765,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   type="button"
                   onClick={handleCheckStep}
                   disabled={!userStepInput.trim() || isCheckingStep}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-slate-950 font-bold text-xs transition-all shadow-xs"
+                  className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-500 disabled:opacity-40 text-slate-950 font-bold text-xs transition-all shadow-xs"
                 >
                   Check Step
                 </button>
@@ -1779,7 +1780,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                       : stepCheckResult.status === 'partially_correct'
                       ? 'bg-blue-950/40 border-blue-500/40 text-blue-200'
                       : stepCheckResult.status === 'missing_condition'
-                      ? 'bg-purple-950/40 border-purple-500/40 text-purple-200'
+                      ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-200'
                       : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
                   }`}
                 >
@@ -1856,7 +1857,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <p className="text-slate-300 text-[11px]">{activeMistakeAnalysis.correction}</p>
             </div>
             <div className="p-2.5 rounded bg-slate-950/50 border border-amber-500/20">
-              <strong className="text-purple-300 block mb-0.5">PREVENTION TIP:</strong>
+              <strong className="text-cyan-300 block mb-0.5">PREVENTION TIP:</strong>
               <p className="text-slate-300 text-[11px]">{activeMistakeAnalysis.preventionTip}</p>
             </div>
           </div>
@@ -1883,12 +1884,12 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             }}
             className={`text-[11px] px-3 py-1 rounded-full whitespace-nowrap transition-all hover:scale-105 ${
               prompt === 'Explain this step'
-                ? 'bg-purple-500/20 text-purple-200 border border-purple-500/40 hover:bg-purple-500/30 font-semibold'
+                ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 font-semibold'
                 : prompt === 'Check for errors'
                 ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 font-semibold'
                 : prompt === 'Simplify expression'
                 ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 font-semibold'
-                : 'bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 text-purple-300 dark:text-purple-300 light:text-purple-700 border border-purple-500/20 hover:bg-purple-500/10'
+                : 'bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 text-cyan-300 dark:text-cyan-300 light:text-cyan-700 border border-cyan-500/20 hover:bg-cyan-500/10'
             }`}
           >
             {prompt}
@@ -1898,7 +1899,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* Speech Dictation Status / Error Banner */}
       {isListening && (
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-950/40 border border-purple-500/40 text-purple-200 text-xs animate-pulse">
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-cyan-200 text-xs animate-pulse">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
           <span className="font-medium">
             {speechStatus || 'Listening... Speak your mathematical query'}
@@ -1955,7 +1956,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               }`}
             >
               {msg.role === 'assistant' && (
-                <div className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <div className="w-7 h-7 rounded-lg bg-cyan-700 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                   <Bot className="w-4 h-4" />
                 </div>
               )}
@@ -1963,8 +1964,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <div
                 className={`max-w-[85%] rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-xs ${
                   msg.role === 'user'
-                    ? 'bg-purple-600 text-white rounded-br-none'
-                    : 'bg-slate-900/90 dark:bg-slate-900/90 light:bg-slate-100 text-slate-200 dark:text-slate-200 light:text-slate-800 rounded-bl-none border border-purple-500/20'
+                    ? 'bg-cyan-700 text-white rounded-br-none'
+                    : 'bg-slate-900/90 dark:bg-slate-900/90 light:bg-slate-100 text-slate-200 dark:text-slate-200 light:text-slate-800 rounded-bl-none border border-cyan-500/20'
                 }`}
               >
                 {/* Message Content with KaTeX */}
@@ -1976,15 +1977,15 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
                 {/* Formula Highlight Card */}
                 {msg.formula && (
-                  <div className="p-2.5 rounded-xl bg-purple-950/40 dark:bg-purple-950/40 light:bg-purple-50 border border-purple-500/30 flex items-center justify-between gap-2 flex-wrap">
-                    <div className="font-mono-math text-xs text-purple-300 dark:text-purple-300 light:text-purple-700">
+                  <div className="p-2.5 rounded-xl bg-cyan-950/40 dark:bg-cyan-950/40 light:bg-cyan-50 border border-cyan-500/30 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="font-mono-math text-xs text-cyan-300 dark:text-cyan-300 light:text-cyan-700">
                       <MathMarkdownRenderer content={`$$${msg.formula}$$`} />
                     </div>
                     <button
                       type="button"
                       onClick={() => handleCopyLaTeX(msg)}
                       title="Copy formula in LaTeX syntax"
-                      className="text-[11px] flex items-center gap-1 text-purple-400 hover:text-purple-200 bg-purple-500/10 hover:bg-purple-500/20 px-2 py-1 rounded transition-colors"
+                      className="text-[11px] flex items-center gap-1 text-cyan-400 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 px-2 py-1 rounded transition-colors"
                     >
                       {copiedLatexId === msg.id ? (
                         <>
@@ -2003,8 +2004,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
                 {/* Step-by-step breakdown list */}
                 {msg.steps && msg.steps.length > 0 && (
-                  <div className="mt-1 space-y-1.5 border-t border-purple-500/20 pt-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400 dark:text-purple-400 light:text-purple-600 block">
+                  <div className="mt-1 space-y-1.5 border-t border-cyan-500/20 pt-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 dark:text-cyan-400 light:text-cyan-600 block">
                       Derivation Steps:
                     </span>
                     <div className="space-y-1.5">
@@ -2017,7 +2018,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                             key={i}
                             className={`p-2 rounded-lg text-xs flex items-start justify-between gap-2 transition-colors ${
                               isThisStepSpeaking
-                                ? 'bg-purple-950/40 border border-purple-500/40'
+                                ? 'bg-cyan-950/40 border border-cyan-500/40'
                                 : 'bg-slate-950/40 border border-slate-800/40 hover:border-slate-700/60'
                             }`}
                           >
@@ -2035,7 +2036,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                 type="button"
                                 onClick={() => handleQuickPromptClick('explain-step', st)}
                                 title={`Ask AI to explain step ${i + 1} in detail`}
-                                className="p-1 rounded transition-colors text-slate-500 hover:text-purple-300 hover:bg-purple-500/10"
+                                className="p-1 rounded transition-colors text-slate-500 hover:text-cyan-300 hover:bg-cyan-500/10"
                               >
                                 <HelpCircle className="w-3 h-3" />
                               </button>
@@ -2070,7 +2071,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                   }
                                   className={`p-1 rounded transition-colors ${
                                     isThisStepSpeaking
-                                      ? 'text-purple-300 bg-purple-500/30'
+                                      ? 'text-cyan-300 bg-cyan-500/30'
                                       : 'text-slate-500 hover:text-cyan-300 hover:bg-slate-800'
                                   }`}
                                 >
@@ -2099,19 +2100,19 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                           onClick={() => handleSpeakFullExplanation(msg)}
                           className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
                             isThisSpeaking
-                              ? 'text-purple-300 bg-purple-500/20 font-semibold'
-                              : 'hover:text-purple-300'
+                              ? 'text-cyan-300 bg-cyan-500/20 font-semibold'
+                              : 'hover:text-cyan-300'
                           }`}
                           title="Listen to full explanation read aloud"
                         >
                           {isThisSpeaking && !isSpeakingPaused ? (
                             <>
-                              <Pause className="w-3 h-3 text-purple-400" />
+                              <Pause className="w-3 h-3 text-cyan-400" />
                               <span>Pause</span>
                             </>
                           ) : (
                             <>
-                              <Volume2 className="w-3 h-3 text-purple-400" />
+                              <Volume2 className="w-3 h-3 text-cyan-400" />
                               <span>Listen</span>
                             </>
                           )}
@@ -2155,7 +2156,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     {msg.responseSource && (
                       <span
                         data-response-source={msg.responseSource}
-                        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-300 border border-slate-700/60"
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-300 border border-slate-700/60"
                       >
                         {msg.responseSource === 'gemini'
                           ? 'Gemini explanation'
@@ -2168,7 +2169,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                 : 'Local Calcora Tutor'}
                       </span>
                     )}
-                    {msg.providerMessage && <p role="status" className="text-[10px] leading-4 text-amber-600 dark:text-amber-300">{msg.providerMessage}</p>}
+                    {msg.providerMessage && <p role="status" className="text-[11px] leading-4 text-amber-600 dark:text-amber-300">{msg.providerMessage}</p>}
 
                     {/* Canonical verification state. Derived from real application
                         state, never hardcoded, and never inferred from the presence
@@ -2192,9 +2193,9 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         })}
 
         {isLoading && (
-          <div className="flex gap-3 items-center text-xs text-purple-400">
-            <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center shrink-0">
-              <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+          <div className="flex gap-3 items-center text-xs text-cyan-400">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0">
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
             </div>
             <span>Analyzing problem and synthesizing mathematical proof...</span>
           </div>
@@ -2206,19 +2207,19 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       {/* Clickable Quick Prompts Toolbar */}
       <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-slate-900/60 dark:bg-slate-900/60 light:bg-slate-100/90 border border-slate-800/80 dark:border-slate-800/80 light:border-slate-300">
         <div className="flex items-center justify-between gap-2 px-1">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-300 dark:text-purple-300 light:text-purple-700 uppercase tracking-wider">
-            <Zap className="w-3.5 h-3.5 text-purple-400" />
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-cyan-300 dark:text-cyan-300 light:text-cyan-700 uppercase tracking-wider">
+            <Zap className="w-3.5 h-3.5 text-cyan-400" />
             <span>Quick Prompts</span>
           </div>
           {currentExpression ? (
             <span
-              className="text-[10px] font-mono text-cyan-400/90 truncate max-w-[220px] bg-cyan-950/30 px-1.5 py-0.5 rounded border border-cyan-800/30"
+              className="text-[11px] font-mono text-cyan-400/90 truncate max-w-[220px] bg-cyan-950/30 px-1.5 py-0.5 rounded border border-cyan-800/30"
               title={`Active calculator expression: ${currentExpression}`}
             >
               Context: {currentExpression}
             </span>
           ) : (
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[11px] text-slate-500">
               Click to query AI instantly
             </span>
           )}
@@ -2231,10 +2232,10 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             type="button"
             onClick={() => handleQuickPromptClick('explain-step')}
             disabled={isLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-purple-100 border border-purple-500/30 hover:border-purple-500/50 transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-100 border border-cyan-500/30 hover:border-cyan-500/50 transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             title="Ask AI to deconstruct and explain mathematical reasoning step-by-step"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+            <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
             <span>Explain this step</span>
           </button>
 
@@ -2283,10 +2284,10 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             type="button"
             onClick={() => handleQuickPromptClick('alternative')}
             disabled={isLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 hover:text-indigo-100 border border-indigo-500/30 hover:border-indigo-500/50 transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-100 border border-cyan-500/30 hover:border-cyan-500/50 transition-all hover:scale-[1.02] active:scale-95 whitespace-nowrap shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             title="Explore an alternative mathematical method or approach"
           >
-            <GitBranch className="w-3.5 h-3.5 text-indigo-400" />
+            <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
             <span>Alternative method</span>
           </button>
         </div>
@@ -2316,8 +2317,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             disabled={isLoading}
             className={`w-full pl-4 pr-11 py-3 rounded-xl bg-slate-900 dark:bg-slate-900 light:bg-white border text-white dark:text-white light:text-slate-900 text-sm focus:outline-none transition-all shadow-inner ${
               isListening
-                ? 'border-purple-500 ring-2 ring-purple-500/30 bg-purple-950/20'
-                : 'border-slate-800 dark:border-slate-800 light:border-slate-300 focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+                ? 'border-cyan-500 ring-2 ring-cyan-500/30 bg-cyan-950/20'
+                : 'border-slate-800 dark:border-slate-800 light:border-slate-300 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500'
             }`}
           />
 
@@ -2340,7 +2341,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 ? 'text-slate-600 cursor-not-allowed opacity-50'
                 : isListening
                 ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/40 animate-pulse'
-                : 'text-slate-400 hover:text-purple-400 hover:bg-slate-800/80 active:scale-95'
+                : 'text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 active:scale-95'
             }`}
           >
             {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -2355,7 +2356,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           className={`px-5 py-3 rounded-xl font-bold transition-all shadow-md flex items-center justify-center gap-1.5 ${
             isLoading || !inputPrompt.trim()
               ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-              : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-500/20 active:scale-95'
+              : 'bg-cyan-700 hover:bg-cyan-800 text-white shadow-cyan-500/20 active:scale-95'
           }`}
         >
           <Send className="w-4 h-4" />
@@ -2406,14 +2407,14 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   >
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-amber-400 uppercase tracking-wider text-[10px]">
+                        <span className="font-bold text-amber-400 uppercase tracking-wider text-[11px]">
                           {m.mistakeCategory.replace(/_/g, ' ')}
                         </span>
-                        <span className="text-slate-400 text-[10px]">
+                        <span className="text-slate-400 text-[11px]">
                           {m.topic} • {m.difficulty}
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-[11px] text-slate-500">
                         {new Date(m.timestamp).toLocaleDateString()}
                       </span>
                     </div>

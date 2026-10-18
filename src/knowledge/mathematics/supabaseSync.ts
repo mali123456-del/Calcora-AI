@@ -37,9 +37,20 @@ export function knowledgeToSupabaseRecord(item: MathematicsKnowledgeItem, versio
 }
 
 export function tutorExampleToSupabaseRecord(example: MathTutorTrainingExample): SupabaseTutorExampleRecord {
-  return { example_key:example.id, topic:example.topic, user_variants:compact(example.userVariants), ideal_behavior:example.idealBehavior, answer_strategy:example.answerStrategy.join('\n'),
-    searchable_text:[example.topic,...example.userVariants,example.idealBehavior,...example.answerStrategy].join('\n').slice(0,20000),
-    source:{sourceName:'Calcora AI original tutor corpus',sourceType:'original-summary',licenseOrStatus:'Original Calcora-authored training example; no external transcript copied.'} };
+  const strategyStr = Array.isArray(example.answerStrategy) ? example.answerStrategy.join(', ') : String(example.answerStrategy ?? '');
+  return {
+    example_key: example.id,
+    topic: example.topic,
+    user_variants: compact(example.userVariants),
+    ideal_behavior: example.idealBehavior,
+    answer_strategy: strategyStr,
+    searchable_text: [example.topic, ...(example.userVariants ?? []), example.idealBehavior, strategyStr].join('\n').slice(0, 20000),
+    source: {
+      sourceName: 'Calcora AI original tutor corpus',
+      sourceType: 'original-summary',
+      licenseOrStatus: 'Original Calcora-authored training example; no external transcript copied.',
+    },
+  };
 }
 
 export function buildQuestionRecord(dataset: MathDatasetSource, record: { id?: string; question: string; answer?: string; topic?: string; metadata?: Record<string, unknown> }, verification: { status: SupabaseQuestionRecord['status']; note?: string }): SupabaseQuestionRecord {

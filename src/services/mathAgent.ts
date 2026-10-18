@@ -19,7 +19,8 @@
  * Bounded by design: `MAX_AGENT_STEPS`, a wall-clock budget, a closed tool allowlist,
  * and no recursion. There is no code path here that can call itself.
  */
-import { toolCalculate, toolSolveEquation } from '../engine/toolLayer';
+import { toolCalculate, toolDerivative, toolSolveEquation } from '../engine/toolLayer';
+import { spotCheckDerivative } from '../engine/symbolicDerivative';
 import type { MathToolResult } from '../types';
 import { extractMathProblem } from '../engine/problemExtractor';
 import { createEmptyStudentModel, type StudentModel } from './studentModel';
@@ -39,6 +40,7 @@ export const MAX_GOAL_CHARS = 2000;
 export const ALLOWED_AGENT_TOOLS = [
   'calculate',
   'solveEquation',
+  'derivative',
 ] as const;
 export type AgentTool = (typeof ALLOWED_AGENT_TOOLS)[number];
 
@@ -53,7 +55,7 @@ export interface AgentStep {
 export interface AgentVerification {
   status: VerificationStatus;
   /** How the check was performed. 'none' only when status is UNKNOWN. */
-  method: 'substitute' | 'recompute' | 'none';
+  method: 'substitute' | 'recompute' | 'spot-check' | 'none';
   reason: string;
   /** The independent observation, when one exists. */
   observed?: string;
@@ -100,6 +102,7 @@ export interface MathAgentRequest {
 export interface AgentEngine {
   calculate: typeof toolCalculate;
   solveEquation: typeof toolSolveEquation;
+  derivative: typeof toolDerivative;
 }
 
 /** Partial injection, so a test can replace one tool and keep the rest real. */
@@ -108,9 +111,31 @@ export type AgentEngineOverride = Partial<AgentEngine>;
 const defaultEngine: AgentEngine = {
   calculate: toolCalculate,
   solveEquation: toolSolveEquation,
+  derivative: toolDerivative,
 };
 
 const CONCEPTUAL = /explain|what is|what are|define|meaning|concept|teach|understand|why|difference between|how does/i;
+
+/** Goals that demand a derivative function, not an evaluated value. */
+const DERIVATIVE_GOAL = /derivative|differentiat|d\/dx/i;
+
+/**
+ * Independently spot-checks a claimed derivative function: the claim is
+ * evaluated at sample points and compared against a central difference of the
+ * source expression. The claim came from symbolic differentiation and this
+ * check is numerical, so agreement is real evidence, not a tautology.
+ */
+function verifyBySpotCheck(expression: string, reportedDerivative: string): AgentVerification {
+  const spot = spotCheckDerivative(expression, reportedDerivative, 'x');
+  if (spot.checked === 0) {
+    return { status: 'UNKNOWN', method: 'none', reason: spot.summary };
+  }
+  const observed = `${spot.matched}/${spot.checked} sample points`;
+  if (spot.passed) {
+    return { status: 'PASS', method: 'spot-check', reason: spot.summary, observed };
+  }
+  return { status: 'FAIL', method: 'spot-check', reason: spot.summary, observed };
+}
 
 /** Independently re-evaluates a calculation with the engine. */
 function verifyByRecomputation(
@@ -248,8 +273,26 @@ function executeGoal(
     || (extracted.kind === 'calculate' && extracted.expression),
   );
   const budget: Partial<Record<AgentTool, MathToolResult>> = {};
+  const derivativeGoal = DERIVATIVE_GOAL.test(goal);
+  let derivativeAttempted = false;
 
-  if (extracted.kind === 'solveEquation' && extracted.equation) {
+  if (derivativeGoal && extracted.kind === 'calculate' && extracted.expression) {
+    // A derivative goal must be answered by symbolic differentiation. Routing it
+    // to `calculate` would evaluate f(x) and misreport that value as f'(x).
+    lookedMathematical = true;
+    derivativeAttempted = true;
+    const attempt = engine.derivative({ expression: extracted.expression });
+    if (attempt.success && attempt.metadata?.symbolicSupported !== false) {
+      budget.derivative = attempt;
+    } else if (attempt.success) {
+      // The tool honestly declined to produce a derivative function (abs, !, ...).
+      domainError = String(
+        attempt.metadata?.unsupportedReason ?? 'symbolic differentiation is not supported for this expression',
+      );
+    } else if (attempt.error) {
+      domainError = String(attempt.error);
+    }
+  } else if (extracted.kind === 'solveEquation' && extracted.equation) {
     lookedMathematical = true;
     budget.solveEquation = engine.solveEquation({ equation: extracted.equation });
     if (!budget.solveEquation.success && budget.solveEquation.error) {
@@ -264,7 +307,7 @@ function executeGoal(
   }
 
   // Fallback: try the whole cleaned goal, then an equation-shaped substring.
-  if (!budget.solveEquation?.success && !budget.calculate?.success) {
+  if (!derivativeAttempted && !budget.solveEquation?.success && !budget.calculate?.success) {
     const cleaned = goal.replace(/[?]+$/, '').trim();
     if (cleaned.includes('=')) {
       lookedMathematical = true;
@@ -283,6 +326,21 @@ function executeGoal(
     }
   }
 
+  const derivative = budget.derivative;
+  if (derivative?.success) {
+    return {
+      tool: 'derivative',
+      domainError: null,
+      lookedMathematical,
+      extractedMath,
+      deterministic: {
+        tool: 'derivative',
+        result: String(derivative.result),
+        expression: String(derivative.expression),
+        steps: derivative.steps ?? derivative.derivationSteps ?? [],
+      },
+    };
+  }
   const solved = budget.solveEquation;
   if (solved?.success) {
     return {
@@ -457,7 +515,9 @@ export async function runMathAgentWithEngine(
   iterations += 1;
   const mode = request.verify ?? 'auto';
   let verification: AgentVerification;
-  if (tool === 'solveEquation' || (mode === 'substitute' && deterministic.expression.includes('='))) {
+  if (tool === 'derivative') {
+    verification = verifyBySpotCheck(deterministic.expression, deterministic.result);
+  } else if (tool === 'solveEquation' || (mode === 'substitute' && deterministic.expression.includes('='))) {
     verification = verifyBySubstitution(
       deterministic.expression,
       String(deterministic.result).split(',').map((r) => r.trim()).filter(Boolean),
@@ -476,8 +536,13 @@ export async function runMathAgentWithEngine(
   const derivation = deterministic.steps.length
     ? deterministic.steps.map((s) => `- ${s}`).join('\n')
     : '';
+  // A derivative claim is rendered as d/dx(f) = f'(x). Rendering it as
+  // "f(x) = f'(x)" would be a false equation.
+  const headline = tool === 'derivative'
+    ? `d/dx(${deterministic.expression}) = ${deterministic.result}`
+    : `${deterministic.expression} = ${deterministic.result}`;
   const explanation = [
-    `${deterministic.expression} = ${deterministic.result}`,
+    headline,
     '',
     `Independent verification: ${verification.status} (${verification.method}). ${verification.reason}`,
     derivation ? `\nSteps:\n${derivation}` : '',

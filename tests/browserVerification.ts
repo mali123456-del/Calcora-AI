@@ -30,10 +30,14 @@ async function openTutor(page: any): Promise<void> {
 }
 
 async function waitForTutorReady(page: any): Promise<void> {
+  // A selected GGUF answers by real local inference on the CPU (measured ~11s for
+  // a 1.5B model on this machine, and longer when the machine is busy), so the
+  // wait has to allow for actual model generation rather than a deterministic
+  // engine round-trip.
   await page.waitForFunction(() => {
     const input = document.querySelector<HTMLInputElement>('#ai-prompt-input');
     return Boolean(input && !input.disabled);
-  }, null, { timeout: 30000 });
+  }, null, { timeout: 120000 });
 }
 
 async function openPdfReader(page: any): Promise<void> {
@@ -144,7 +148,12 @@ async function main() {
   await page.locator('select[title="Choose Tutor response language"]').selectOption('en', { timeout: 5000 });
   await tutorInput.fill('Explain algebra in plain language');
   await page.locator('#btn-ai-submit').click({ timeout: 5000 });
-  await page.waitForFunction(() => document.body.innerText.includes('Algebra is the branch') || document.body.innerText.includes('Algebra uses'), null, { timeout: 30000 });
+  // Wait for the real deterministic fallback answer. This used to wait for the
+  // strings "Algebra is the branch" / "Algebra uses", which exist in no source
+  // file at any commit - the check could never pass, so it is pinned to the
+  // measured contract: with no Gemini key and explicit cloud consent, the Tutor
+  // falls back to the deterministic knowledge answer for the stated topic.
+  await page.waitForFunction(() => document.body.innerText.includes('Linear Equations and Inverse Operations') || document.body.innerText.includes('first-degree equation') || document.body.innerText.includes('Quadratic Formula'), null, { timeout: 120000 });
   await waitForTutorReady(page);
   check((await page.locator('[data-response-source="local-deterministic"]').count()) > 0, 'missing Gemini key is disclosed as a local Tutor response');
   check(!/GEMINI_API_KEY|GEMINI_NOT_CONFIGURED|Gemini not configured/i.test(await page.locator('body').innerText()), 'missing-key response contains no stale placeholder');
@@ -198,7 +207,9 @@ async function main() {
   await page.waitForFunction(
     (n) => document.querySelectorAll('[data-verification-state]').length > n,
     badgesBefore,
-    { timeout: 30000 },
+    // A selected GGUF answers by real local CPU inference (measured ~11 s), so the
+    // badge only appears once generation finishes.
+    { timeout: 120000 },
   );
   await waitForTutorReady(page);
 
@@ -218,6 +229,47 @@ async function main() {
   const badgeTotal = await page.locator('[data-verification-state]').count();
   const footerTotal = await page.locator('[data-response-source]').count();
   check(badgeTotal >= footerTotal, `no assistant answer renders without a verification state (badges=${badgeTotal}, footers=${footerTotal})`);
+
+  // ------------------------------------------------------------------
+  console.log('\n[2d] Derivative UX: supported answers verify, unsupported answers claim nothing');
+  const askTutor = async (prompt: string): Promise<{ status: number; text: string }> => {
+    const responsePromise = page.waitForResponse(
+      (response: any) => response.url().endsWith('/api/ai/math') && response.request().method() === 'POST',
+      { timeout: 60000 },
+    );
+    await page.locator('#ai-prompt-input').fill(prompt);
+    await page.locator('#btn-ai-submit').click({ timeout: 5000 });
+    const response = await responsePromise;
+    await waitForTutorReady(page);
+    return { status: response.status(), text: await page.locator('body').innerText() };
+  };
+
+  const supported = await askTutor('Find the derivative of x^2');
+  check(supported.status === 200, `the supported derivative request succeeded (HTTP ${supported.status})`);
+  check(
+    /d\/dx\(x\^2\)\s*=\s*2x/.test(supported.text),
+    'the UI renders the verified derivative d/dx(x^2) = 2x',
+  );
+  check(
+    !/x\^2\s*=\s*2x/.test(supported.text),
+    'the false equation "x^2 = 2x" never appears in the derivative answer',
+  );
+  const supportedBadge = page.locator('[data-verification-state]').last();
+  const supportedState = (await supportedBadge.getAttribute('data-verification-state')) ?? '';
+  check(supportedState === 'VERIFIED', `a supported derivative reports VERIFIED in the UI (got "${supportedState}")`);
+
+  const unsupported = await askTutor('Find the derivative of abs(x)');
+  check(unsupported.status === 200, `the unsupported derivative request succeeded (HTTP ${unsupported.status})`);
+  check(
+    /No derivative function is claimed/i.test(unsupported.text),
+    'an unsupported derivative states that no derivative function is claimed',
+  );
+  const unsupportedBadge = page.locator('[data-verification-state]').last();
+  const unsupportedState = (await unsupportedBadge.getAttribute('data-verification-state')) ?? '';
+  check(
+    unsupportedState !== 'VERIFIED',
+    `an unsupported derivative never shows VERIFIED in the UI (got "${unsupportedState}")`,
+  );
 
   // ------------------------------------------------------------------
   console.log('\n[3] PDF upload -> local Tutor grounding');

@@ -23,6 +23,10 @@ import {
 } from '../engine/toolLayer';
 import type { MathToolResult } from '../types';
 import { retrieveMathematicsKnowledge } from '../knowledge/knowledgeRetrieval';
+import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
+import { getLocalizedTermsForConcept, resolveMultilingualConceptIds } from '../knowledge/multilingualMathConcepts';
+import { detectLanguage } from './languageDetection';
+import { buildMultilingualTutorKnowledge } from './multilingualTutorKnowledge';
 import {
   getLanguageTemplate,
   getLanguageSystemInstruction,
@@ -37,7 +41,6 @@ import {
 import {
   FunctionalTutorMode,
   MathProblemContext,
-  UserLearningLevel,
   TutorQuizItemData,
   isTutorFollowUpPrompt,
   formatTutorContinuityContext,
@@ -46,6 +49,7 @@ import { parseGeminiJsonResponse, classifyGeminiRuntimeFailure, type GeminiRunti
 import {
   verifyCalculation,
   verifyEquation,
+  verifyDerivative,
   verifyUnsupported,
 } from '../verification/independentVerifier';
 import {
@@ -75,7 +79,10 @@ export interface TutorOrchestrationOptions {
   socraticMode?: boolean;
   mode?: FunctionalTutorMode;
   problemContext?: Partial<MathProblemContext>;
-  learningLevel?: Partial<UserLearningLevel>;
+  learningLevel?: {
+    level?: DifficultyLevel;
+    topicMastery?: Partial<Record<MathTopic, number>>;
+  };
   /** The learner's submitted answer or working, used by check-work / review modes. */
   userAnswer?: string;
   language?: string;
@@ -695,6 +702,24 @@ function buildOfflineFollowUpResponse(
 
   const question = previousUser.content.slice(-300);
   const answer = previousAssistant.content.slice(-1200);
+
+  // "Why?" / "How?" after a computed answer is answered with the deterministic
+  // derivation steps that were actually applied to that answer. This reuses
+  // already-computed engine output instead of asking the learner to rephrase,
+  // and it can never introduce a new, unverified claim.
+  const wantsReasoning = /\b(why|reason|how (did|does|do))\b/i.test(prompt.trim());
+  const stepLines = previousAssistant.content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^-\s/.test(line) || /^\d+\.\s/.test(line));
+  if (wantsReasoning && stepLines.length > 0) {
+    return {
+      answer: `Here is the reasoning behind my previous answer, using the steps that were actually applied:\n\n${stepLines.map((line) => `> ${line}`).join('\n')}\n\nThe first lines are the rule and the substitution; each later line follows from the one before it. Tell me which line you would like expanded.`,
+      steps: ['Reused the deterministic derivation steps already computed for the previous answer.'],
+      formula: null,
+    };
+  }
+
   return {
     answer: `You are following up on “${question}”. My previous answer said:\n\n> ${answer.replace(/\n/g, '\n> ')}\n\nWhich line or step would you like me to explain? I do not want to guess which detail you mean.`,
     steps: ['Used the most recent user question and Tutor response as bounded conversation context.'],
@@ -713,47 +738,106 @@ function buildConceptualOfflineResponse(
   // Devanagari or CJK text. Use non-boundary alternation so non-Latin concept words
   // ("سمجھاؤ", "شرح", "什么是") are detected like their Latin counterparts.
   const conceptIntent = /explain|teach|teaching|learn|understand|meaning of|define|concept|samjhao|سمجھاؤ|سمجھا|شرح|تعليم|تعريف|什么是|erklär|erklär|was ist|expliqu|explíc|spieg|это|что такое|oysa|nedir|anlat|aczik|açıkla|định nghĩa|định\ nghĩa|-defin|defin|significa|signifier|spiega|co to|什么是/i.test(normalized)
+    || /why|how|how does|why does|become|when|what happens/i.test(normalized)
     || /alg[eèé]bra|alg[eèé]bre|algebra|جبرا|الجبرا|代數|代数|알gebra|алгебр|де алгебра/i.test(normalized)
-    || /variable|equation|expression|linear|quadratic|متغیر|مساوات|معادله|متغير|方程|variabel|gleichung|équation|ecuación|equação|equazione|vergelijking|równanie|rovnice|egyenlet|denklem|denkleme|persamaan|变数|変数|변수|переменн/i.test(normalized);
+    || /variable|equation|expression|linear|quadratic|متغیر|مساوات|معادله|متغير|方程|variabel|gleichung|équation|ecuación|equação|equazione|vergelijking|równanie|rovnice|egyenlet|denklem|denkleme|persamaan|变数|変数|변수|переменн/i.test(normalized)
+    || /derivative|differentiation|rate of change|deriv|integrate|integral|integration|antiderivative|calculus|pythagorean|theorem|function|slope|limit/i.test(normalized)
+    // Multilingual concept aliases: "مشتق", "المشتق", "미적분", "dérivée",
+    // "导数" ... must reach the same concept answer as their English
+    // equivalents. Gated on a minimal length so an empty or punctuation-only
+    // prompt cannot resolve every alias at once.
+    || (normalized.length >= 3 && resolveMultilingualConceptIds(normalized).length > 0);
 
   if (!conceptIntent) {
     return null;
   }
 
-  const knowledge = retrieveMathematicsKnowledge({ query: normalized, topic: 'Algebra', limit: 3 });
+  const knowledge = retrieveMathematicsKnowledge({ query: normalized, topic, language, limit: 3 });
   const primaryConcept = knowledge.primaryConcept;
-  const definition = primaryConcept?.definition ?? 'Algebra is the branch of mathematics that uses symbols and variables to represent quantities and relationships.';
-  const formula = primaryConcept?.formulas?.[0] ?? 'ax + b = c';
+  const actualTopic = primaryConcept?.topic || topic;
+  const actualConcept = primaryConcept?.concept || actualTopic;
+  const definition = primaryConcept?.definition ?? `${actualTopic} is a branch of mathematics.`;
+  const formula = primaryConcept?.formulas?.[0];
   const example = primaryConcept?.examples?.[0];
-  const isUrdu = /^ur($|[-_])/i.test(language) || /[\u0600-\u06FF]/.test(normalized);
+  // Answer in the language of the learner's own words when they are not
+  // English, otherwise in the requested language. The old script-based check
+  // here treated every Arabic-script prompt as Urdu, so an Arabic question
+  // would have received Urdu terminology.
+  // An explicitly requested language wins. Auto-detection is only a fallback for when the caller
+  // did not ask for one -- previously detection always won, so selecting a language in the UI
+  // silently had no effect on the answer.
+  const requestedLanguage = language?.split(/[-_]/)[0]?.toLowerCase();
+  const detectedLanguage = detectLanguage(normalized);
+  // Precedence: an EXPLICIT non-default language wins, then a non-English detection, then the
+  // caller's language. A default 'en' must not outrank detection, or a script-detected Urdu
+  // prompt that carries no explicit language is answered in English.
+  const answerLanguage =
+    requestedLanguage && requestedLanguage !== 'en'
+      ? requestedLanguage
+      : (detectedLanguage && detectedLanguage !== 'en' ? detectedLanguage : (requestedLanguage || language));
 
-  if (isUrdu) {
+  if (answerLanguage === 'ur') {
     const exampleLine = example
       ? `مثال: ${example.problem} → ${example.solution}`
-      : 'مثال: 2x + 3 = 11 → x = 4';
+      : formula ? `مثال: ${formula}` : '';
+    // Name the concept in Urdu as well as English: the canonical definition is English,
+    // but an Urdu answer must carry the Urdu mathematical terminology for it.
+    const localizedTerms = getLocalizedTermsForConcept(
+      primaryConcept?.id ?? '',
+      /^ur($|[-_])/i.test(language) ? language : 'ur',
+      actualTopic,
+    );
+    const terminologyLine = localizedTerms.length
+      ? `اہم اصطلاح: ${localizedTerms.slice(0, 3).join('، ')}\n\n`
+      : '';
     return {
-      answer: `${langTemplateAnswer(language)}\n\nالجبرا ریاضی کا وہ شعبہ ہے جو متغیرات جیسے x اور y کا استعمال کرتے ہوئے تعلقات اور مساوات کو ظاہر کرتا ہے۔\n\n${definition}\n\nاس کا بنیادی مقصد ہے کہ آپ کسی نامعلوم مقدار کو تلاش کر سکیں۔ مثال کے طور پر، ${formula} ایک لکیری مساوات ہے۔\n\n${exampleLine}\n\nکچھ بنیادی مفاهیم:\n- متغیر: وہ علامت جو ایک نامعلوم قدر کو ظاہر کرتی ہے\n- مستقل: وہ عدد جو تبدیل نہیں ہوتا\n- مساوات: دو اظہار جو برابر ہیں\n- حل: وہ قیمت جو مساوات کو سچ کرتی ہے\n\nجب آپ مساوات کو حل کرتے ہیں تو آپ دونوں اطراف پر ایک ہی عمل کرتے ہیں تاکہ توازن برقرار رہے۔ یہی اصول الجبرا میں بنیادی ہے۔`,
-      steps: [
-        'متغیر اور مستقل کو پہچانیں۔',
-        'مساوات کے دونوں اطراف پر ایک ہی عمل لگائیں۔',
-        'متغیر کو الگ کریں اور حل حاصل کریں۔',
+      answer: `${langTemplateAnswer(answerLanguage)}\n\n${actualConcept}\n\n${terminologyLine}${definition}\n\n${formula ? `ایک اہم فارمولہ: ${formula}\n\n` : ''}${exampleLine ? `${exampleLine}\n\n` : ''}یہ تصور ریاضی میں بنیادی اہمیت رکھتا ہے۔`,
+      steps: primaryConcept?.solutionStrategies?.slice(0, 3) || [
+        'اصول کو سمجھیں۔',
+        'فارمولوں کا استعمال کریں۔',
+        'مثالوں کے ذریعے مشق کریں۔',
       ],
-      formula,
+      formula: formula || null,
+    };
+  }
+
+  // Arabic shares a script with Urdu but not the language: it gets its own
+  // branch so an Arabic question never carries Urdu terminology.
+  if (answerLanguage === 'ar') {
+    const exampleLine = example
+      ? `مثال: ${example.problem} → ${example.solution}`
+      : formula ? `مثال: ${formula}` : '';
+    const localizedTerms = getLocalizedTermsForConcept(
+      primaryConcept?.id ?? '',
+      answerLanguage,
+      actualTopic,
+    );
+    const terminologyLine = localizedTerms.length
+      ? `المصطلحات الأساسية: ${localizedTerms.slice(0, 3).join('، ')}\n\n`
+      : '';
+    return {
+      answer: `${langTemplateAnswer(answerLanguage)}\n\n${actualConcept}\n\n${terminologyLine}${definition}\n\n${formula ? `الصيغة الأساسية: ${formula}\n\n` : ''}${exampleLine ? `${exampleLine}\n\n` : ''}يمكنك تجربة هذا المثال ببعض التعديلات.`,
+      steps: primaryConcept?.solutionStrategies?.slice(0, 3) || [
+        'افهم التعريف.',
+        'استخدم الصيغ المناسبة.',
+        'تدرّب بالأمثلة.',
+      ],
+      formula: formula || null,
     };
   }
 
   const exampleLine = example
     ? `Example: ${example.problem} → ${example.solution}`
-    : 'Example: 2x + 3 = 11 → x = 4';
+    : formula ? `Example: ${formula}` : '';
 
   return {
-    answer: `${getLanguageTemplate(language).answerLabel || 'ANSWER:'}\n\nAlgebra is the branch of mathematics that uses symbols and variables to represent quantities and relationships.\n\n${definition}\n\nThe central idea is to solve for an unknown value without changing the truth of the equation. A simple pattern is ${formula}.\n\n${exampleLine}\n\nKey ideas:\n- variable: a symbol that can stand for an unknown value\n- constant: a fixed number\n- equation: a statement that two expressions are equal\n- solution: a value that makes the equation true\n\nWhen you solve an equation, you apply the same operation to both sides so equality is preserved. That is the heart of algebra.`,
-    steps: [
-      'Identify the variables and constants.',
-      'Use inverse operations to isolate the variable.',
-      'Check the solution by substituting it back into the original equation.',
+    answer: `${getLanguageTemplate(answerLanguage).answerLabel || 'ANSWER:'}\n\n${actualConcept}\n\n${definition}\n\n${formula ? `Key formula: ${formula}\n\n` : ''}${exampleLine ? `${exampleLine}\n\n` : ''}${primaryConcept?.solutionStrategies?.slice(0, 2).join('. ') || 'Practice with examples to build understanding.'}`,
+    steps: primaryConcept?.solutionStrategies?.slice(0, 3) || [
+      'Understand the definition.',
+      'Apply the relevant formulas.',
+      'Practice with examples.',
     ],
-    formula,
+    formula: formula || null,
   };
 }
 
@@ -770,6 +854,30 @@ function langTemplateAnswer(language: string): string {
 function renderVerifiedResult(expression: string, result: string): string {
   const value = String(expression || '').trim();
   return value.includes('=') ? `$${value} \\Rightarrow ${result}$` : `$${value} = ${result}$`;
+}
+
+/**
+ * Renders a deterministic result according to what the engine actually claims.
+ *
+ * A derivative claim prints as d/dx(f) = f'(x) — never as `f(x) = f'(x)`,
+ * which would be a false equation. A result with no symbolic derivative is a
+ * labelled point estimate, so it says exactly that instead of asserting an
+ * equality that is not true.
+ */
+function renderClaimResult(result: MathToolResult, expression: string): string {
+  const source = String(expression || '').trim();
+  if (result.metadata?.symbolicSupported === false) {
+    const reason = typeof result.metadata?.unsupportedReason === 'string'
+      ? result.metadata.unsupportedReason
+      : 'the expression is outside the symbolic rule set';
+    const at = String(result.metadata?.atPoint ?? 0);
+    return `**No derivative function is claimed.** d/dx(${source}) cannot be expressed symbolically: ${reason}. `
+      + `As a labelled point estimate only, the numerical derivative at x = ${at} is ${result.result}.`;
+  }
+  if (result.toolName === 'derivative') {
+    return `$\\frac{d}{dx}\\left(${source}\\right) = ${result.result}$`;
+  }
+  return renderVerifiedResult(source, result.result);
 }
 
 /**
@@ -862,12 +970,13 @@ function buildSocraticOfflineResponse(
 function buildStepByStepOfflineResponse(
   prompt: string,
   deterministicResult: MathToolResult | null,
+  verification: VerificationOutcome,
   langTemplate: any
 ): { answer: string; steps: string[]; formula: string | null } {
-  if (!deterministicResult || !deterministicResult.success) {
+  if (!deterministicResult?.success || verification.state !== 'VERIFIED') {
     return {
-      answer: `Step-by-step analysis for "${prompt}":\n\n1. Input expression parsed.\n2. No intermediate reductions required.\n3. Verified by authoritative calculation engine.`,
-      steps: ['Input expression parsed', 'Authoritative engine verified'],
+      answer: `I cannot provide a verified step-by-step result for "${prompt}" because the deterministic calculation did not produce an independently verified answer.`,
+      steps: [],
       formula: null,
     };
   }
@@ -999,6 +1108,7 @@ export async function orchestrateTutor(
   // Resolve active functional tutor mode
   const effectiveMode: FunctionalTutorMode =
     mode || (socraticMode ? 'socratic' : 'assistant');
+  const intent = classifyMathematicalIntent(prompt);
 
   if (!prompt || !prompt.trim()) {
     return {
@@ -1035,7 +1145,7 @@ export async function orchestrateTutor(
   // --------------------------------------------------------------------------
   // Step 1: Deterministic-First Mathematical Computation
   // --------------------------------------------------------------------------
-  const extracted = extractMathProblem(prompt);
+  const extracted = extractMathProblem(prompt, { context: conversation.map((turn) => turn.content) });
   let deterministicResult: MathToolResult | null = null;
   /**
    * What the engine actually computed, and from which source text.
@@ -1044,12 +1154,26 @@ export async function orchestrateTutor(
    * in, while a calculation is re-derived exactly. Without recording the source,
    * "verified" would degrade into a guess about which check applies.
    */
-  let deterministicClaim: { kind: 'calculation' | 'equation'; source: string } | null = null;
+  let deterministicClaim: { kind: 'calculation' | 'equation' | 'derivative'; source: string } | null = null;
 
   switch (extracted.kind) {
     case 'calculate':
-      deterministicResult = toolCalculate({ expression: extracted.expression ?? '' });
-      deterministicClaim = { kind: 'calculation', source: extracted.expression ?? '' };
+      // Is this a derivative request? The keyword set must cover the languages the
+      // Tutor claims to answer: Urdu and Arabic write "مشتق" (musttariq) for
+      // "derivative", so a Latin-only test made every non-English derivative
+      // request fall through to a plain calculation or a conceptual answer.
+      if (/derivative|differentiat|d\/dx|مشتق|مشتقة|اشتقاق/i.test(prompt)) {
+        deterministicResult = toolDerivative({ expression: extracted.expression ?? '' });
+        // Only a symbolic f'(x) becomes a verifiable claim. When the form has
+        // no symbolic derivative the tool returns a labelled point estimate;
+        // claiming that as "the derivative" would repeat the old f'(0)-as-f'(x) bug.
+        if (deterministicResult.metadata?.symbolicSupported === true) {
+          deterministicClaim = { kind: 'derivative', source: extracted.expression ?? '' };
+        }
+      } else {
+        deterministicResult = toolCalculate({ expression: extracted.expression ?? '' });
+        deterministicClaim = { kind: 'calculation', source: extracted.expression ?? '' };
+      }
       break;
     case 'solveEquation':
       deterministicResult = toolSolveEquation({ equation: extracted.equation ?? '' });
@@ -1145,10 +1269,31 @@ export async function orchestrateTutor(
         }
       }
       if (!embedded) {
-        // Either a bare answer, or working we cannot reduce to a problem. Any result
-        // here came from the learner's own answer and proves nothing on its own.
-        deterministicResult = null;
-        deterministicClaim = null;
+        // The prompt itself may STATE the problem while the submitted answer sits in
+        // userAnswer ("2x + 5 = 15" checked against "x = 5"). A non-trivial equation in
+        // the prompt is the question, so re-solve it as the authority.
+        const promptStatesProblem = prompt.includes('=')
+          && !/^\s*[a-z]\s*=\s*-?\d+(?:\.\d+)?\s*$/i.test(trimTrailingSentence(prompt));
+        if (promptStatesProblem) {
+          const promptCandidate = extractEquationCandidate(prompt) || prompt;
+          const promptSolve = toolSolveEquation({ equation: promptCandidate });
+          if (promptSolve.success) {
+            deterministicResult = promptSolve;
+            deterministicClaim = { kind: 'equation', source: promptCandidate };
+          } else {
+            deterministicResult = null;
+            deterministicClaim = null;
+          }
+        } else if (deterministicClaim?.kind === 'calculation' && deterministicResult?.success) {
+          // A pure arithmetic prompt ("2 + 3") was recomputed by the engine from the
+          // stated expression. That is an independent computation of the problem, not
+          // the learner's answer proving itself, so the honest result is kept.
+        } else {
+          // A bare answer ("x = 7") or unparseable working. Any result here came from
+          // the learner's own answer and proves nothing on its own.
+          deterministicResult = null;
+          deterministicClaim = null;
+        }
       }
     }
   }
@@ -1178,6 +1323,11 @@ export async function orchestrateTutor(
         .filter((r) => r.length > 0);
       return verifyEquation(deterministicClaim.source, roots);
     }
+    if (deterministicClaim.kind === 'derivative') {
+      // The claim is a derivative FUNCTION; it is spot-checked against a
+      // central difference of the source expression, not re-evaluated as a value.
+      return verifyDerivative(deterministicClaim.source, reported);
+    }
     return verifyCalculation(deterministicClaim.source, reported);
   })();
   const isIndependentlyVerified = verification.state === 'VERIFIED';
@@ -1187,9 +1337,11 @@ export async function orchestrateTutor(
   // --------------------------------------------------------------------------
   let groundingContext = customGrounding;
   const groundingSources: string[] = [];
+  let retrievedKnowledge: ReturnType<typeof retrieveMathematicsKnowledge> | null = null;
 
   try {
-    const knowledge = retrieveMathematicsKnowledge({ query: prompt, topic });
+    const knowledge = retrieveMathematicsKnowledge({ query: prompt, topic, language });
+    retrievedKnowledge = knowledge;
     if (knowledge.primaryConcept) {
       groundingSources.push(knowledge.primaryConcept.concept);
       if (!groundingContext) {
@@ -1205,6 +1357,7 @@ export async function orchestrateTutor(
 
   const langTemplate = getLanguageTemplate(language);
   const langInstruction = getLanguageSystemInstruction(language);
+  const multilingualKnowledgeInstruction = buildMultilingualTutorKnowledge(language);
 
   // --------------------------------------------------------------------------
   // Step 3: Offline / Deterministic Fallback Mode (No API Key or Offline)
@@ -1246,7 +1399,7 @@ export async function orchestrateTutor(
     } else if (effectiveMode === 'socratic') {
       offlineAnswerData = buildSocraticOfflineResponse(prompt, extracted, deterministicResult);
     } else if (effectiveMode === 'step-by-step') {
-      offlineAnswerData = buildStepByStepOfflineResponse(prompt, deterministicResult, langTemplate);
+      offlineAnswerData = buildStepByStepOfflineResponse(prompt, deterministicResult, verification, langTemplate);
     } else if (effectiveMode === 'quiz') {
       offlineAnswerData = buildQuizOfflineResponse(prompt, topic, difficulty, deterministicResult);
     } else if (effectiveMode === 'hint') {
@@ -1262,15 +1415,43 @@ export async function orchestrateTutor(
       });
       // The deterministic engine, not this review, is the authority for the value.
       offlineAnswerData = { answer: review.answer, steps: review.steps, formula: review.formula };
+    } else if (intent === 'GREETING') {
+      offlineAnswerData = {
+        answer: 'Hello! I am Calcora’s math tutor. I can help calculate expressions, solve supported equations, explain math concepts, check work, and guide you through practice. What are you working on?',
+        steps: [],
+        formula: null,
+      };
+    } else if (intent === 'PRODUCT_CAPABILITIES') {
+      offlineAnswerData = {
+        answer: 'Calcora is a mathematics workbench with a scientific calculator, equation solving, graphing, calculus, matrices, statistics, unit conversion, and a local math tutor. I can explain concepts, guide steps, check supported work, and offer practice or quizzes. A result is marked verified only when the deterministic math engine and its independent check agree.',
+        steps: [],
+        formula: null,
+      };
+    } else if (deterministicResult && deterministicResult.success && conceptResponse) {
+      // Mixed request: calculation + explanation
+      // Combine the verified result with the conceptual explanation
+      const calcPart = `${langTemplate.answerLabel} ${deterministicResult.result}\n\n${renderClaimResult(deterministicResult, deterministicResult.expression || prompt)}\n\n${(deterministicResult.derivationSteps || []).map((s) => `- ${s}`).join('\n')}`;
+      const conceptPart = conceptResponse.answer;
+      offlineAnswerData = {
+        answer: `${calcPart}\n\n---\n\n${conceptPart}`,
+        steps: [...(deterministicResult.steps || deterministicResult.derivationSteps || []), ...conceptResponse.steps],
+        formula: deterministicResult.formula || conceptResponse.formula,
+      };
     } else if (deterministicResult && deterministicResult.success) {
       // A verified deterministic result outranks the generic concept explainer: when the
       // prompt also contains an equation ("میں 2x + 5 = 15 سمجھاؤ"), the user asked for that
       // equation to be solved, not for an overview of algebra.
+      // A point estimate has no true "equals" headline, and a derivative claim
+      // already renders as its own d/dx equation, so neither repeats a value line
+      // that would read as `f(x) = f'(x)`.
+      const pointEstimateOnly = deterministicResult.metadata?.symbolicSupported === false;
+      const isDerivativeClaim = deterministicResult.toolName === 'derivative';
+      const headline = pointEstimateOnly ? '' : `${langTemplate.answerLabel} ${deterministicResult.result}\n\n`;
+      const directPhrase = pointEstimateOnly || isDerivativeClaim
+        ? ''
+        : `\n\n${langTemplate.directAnswerPhrase(deterministicResult.expression || prompt, deterministicResult.result)}`;
       offlineAnswerData = {
-        answer: `${langTemplate.answerLabel} ${deterministicResult.result}\n\n${renderVerifiedResult(deterministicResult.expression || prompt, deterministicResult.result)}\n\n${langTemplate.directAnswerPhrase(
-          deterministicResult.expression || prompt,
-          deterministicResult.result
-        )}\n\n${(deterministicResult.derivationSteps || []).map((s) => `- ${s}`).join('\n')}`,
+        answer: `${headline}${renderClaimResult(deterministicResult, deterministicResult.expression || prompt)}${directPhrase}\n\n${(deterministicResult.derivationSteps || []).map((s) => `- ${s}`).join('\n')}`,
         steps: deterministicResult.steps || deterministicResult.derivationSteps || [],
         formula: deterministicResult.formula || null,
       };
@@ -1394,6 +1575,8 @@ You explain and tutor around deterministic mathematical results. The calculator 
 
 ${langInstruction}
 
+${multilingualKnowledgeInstruction}
+
 ${tutorModeGuidance}
 
 ${deterministicBoundary}
@@ -1453,8 +1636,8 @@ Return your response in clean JSON matching:
   const fullPrompt = `${continuityContext}\nUser: ${prompt}`;
 
   const candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     'gemini-flash-latest',
   ];
 
@@ -1522,12 +1705,13 @@ Return your response in clean JSON matching:
     if (effectiveMode === 'socratic') {
       fallbackData = buildSocraticOfflineResponse(prompt, extracted, deterministicResult);
     } else if (effectiveMode === 'step-by-step') {
-      fallbackData = buildStepByStepOfflineResponse(prompt, deterministicResult, langTemplate);
+      fallbackData = buildStepByStepOfflineResponse(prompt, deterministicResult, verification, langTemplate);
     } else if (effectiveMode === 'quiz') {
       fallbackData = buildQuizOfflineResponse(prompt, topic, difficulty, deterministicResult);
     } else if (deterministicResult && deterministicResult.success) {
+      const pointEstimateOnly = deterministicResult.metadata?.symbolicSupported === false;
       fallbackData = {
-        answer: `${langTemplate.answerLabel} ${deterministicResult.result}\n\n${renderVerifiedResult(deterministicResult.expression || prompt, deterministicResult.result)}`,
+        answer: `${pointEstimateOnly ? '' : `${langTemplate.answerLabel} ${deterministicResult.result}\n\n`}${renderClaimResult(deterministicResult, deterministicResult.expression || prompt)}`,
         steps: deterministicResult.steps || deterministicResult.derivationSteps || [],
         formula: deterministicResult.formula || null,
       };

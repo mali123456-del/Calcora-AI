@@ -107,7 +107,7 @@ export default function VerificationBadge({
         <Icon className={`w-3.5 h-3.5 shrink-0 ${presentation.iconClass}`} aria-hidden="true" />
         <span>{presentation.label}</span>
         {hasDetail && (
-          <span className="text-[10px] font-normal opacity-80" aria-hidden="true">
+          <span className="text-[11px] font-normal opacity-80" aria-hidden="true">
             {expanded ? '▾' : '▸'}
           </span>
         )}

@@ -7,8 +7,24 @@ import {
 import {
   ALL_MATHEMATICS_KNOWLEDGE,
   KNOWLEDGE_BY_ID,
-  searchKnowledgeBase,
+  searchKnowledgeBaseRanked,
 } from './mathematicsKnowledgeIndex';
+import { resolveMultilingualConceptIds } from './multilingualMathConcepts';
+
+/**
+ * Minimum search score for an item to be cited as grounding when the caller
+ * did not vouch for its topic.
+ *
+ * Scores are additive: a concept-name hit is +20, keyword/alias hits +15,
+ * definition-text hits +5, and multilingual alias hits +10000. Every query
+ * therefore returns *some* positive-scoring item - "who won the 1998 football
+ * world cup" matches incidental definition text. Treating the top hit as the
+ * primary concept regardless of score would put a MATHEMATICAL KNOWLEDGE
+ * GROUNDING block full of unrelated definitions in front of the learner.
+ * Honest absence of grounding beats a wrong citation; a caller-stated topic
+ * bypasses the floor because it vouches for the topic itself.
+ */
+const MIN_GROUNDING_SCORE = 20;
 
 /**
  * Retrieves the most relevant mathematical concepts and packages them into a grounding result
@@ -17,20 +33,30 @@ export function retrieveMathematicsKnowledge(
   query: KnowledgeRetrievalQuery
 ): KnowledgeRetrievalResult {
   const queryText = `${query.query} ${query.calculatorExpression || ''}`.trim();
-  const searchResults = searchKnowledgeBase(queryText, query.limit || 4);
+  const ranked = searchKnowledgeBaseRanked(queryText, query.limit || 4);
 
-  // When the caller states a topic, that topic is authoritative for the primary slot.
-  // Token scoring alone is unreliable for non-Latin scripts: a bare Urdu "algebra" query
-  // scored Linear Algebra vector items highest through incidental definition text, so the
-  // Tutor explained algebra using a dot-product definition. Rank the requested topic
-  // first and backfill from it when the text search surfaced too few of its concepts.
-  if (query.topic) {
+  // Multilingual concept matches should override topic bias when available
+  const multilingualMatches = resolveMultilingualConceptIds(queryText);
+
+  let ordered = ranked;
+  if (multilingualMatches.length > 0) {
+    // Reorder to put multilingual matches first
+    ordered = [
+      ...ranked.filter((entry) => multilingualMatches.includes(entry.item.id)),
+      ...ranked.filter((entry) => !multilingualMatches.includes(entry.item.id)),
+    ];
+  } else if (query.topic) {
+    // When the caller states a topic, that topic is authoritative for the primary slot.
+    // Token scoring alone is unreliable for non-Latin scripts: a bare Urdu "algebra" query
+    // scored Linear Algebra vector items highest through incidental definition text, so the
+    // Tutor explained algebra using a dot-product definition. Rank the requested topic
+    // first and backfill from it when the text search surfaced too few of its concepts.
     const requestedTopic = query.topic.toLowerCase();
     const isRequestedTopic = (item: MathKnowledgeItem) =>
       item.topic.toLowerCase() === requestedTopic;
 
-    const matched = searchResults.filter(isRequestedTopic);
-    const remainder = searchResults.filter((item) => !isRequestedTopic(item));
+    const matched = ranked.filter((entry) => isRequestedTopic(entry.item)).map((entry) => entry.item);
+    const remainder = ranked.filter((entry) => !isRequestedTopic(entry.item));
 
     if (matched.length < 2) {
       for (const item of ALL_MATHEMATICS_KNOWLEDGE) {
@@ -41,12 +67,22 @@ export function retrieveMathematicsKnowledge(
       }
     }
 
-    searchResults.length = 0;
-    searchResults.push(...matched, ...remainder);
+    ordered = [
+      ...matched.map((item) => ({ item, score: MIN_GROUNDING_SCORE })),
+      ...remainder,
+    ];
   }
 
-  const primaryConcept = searchResults[0];
-  const relatedConcepts = searchResults.slice(1);
+  // Keep only entries that are either topic-vouched or score past the floor:
+  // anything weaker is not honest enough to cite as a source.
+  const isGroundable = (entry: { item: MathKnowledgeItem; score: number }) =>
+    entry.score >= MIN_GROUNDING_SCORE ||
+    (!!query.topic && entry.item.topic.toLowerCase() === query.topic.toLowerCase());
+  const grounded = ordered.filter(isGroundable);
+
+  const primaryConcept = grounded[0]?.item;
+  const relatedConcepts = grounded.slice(1).map((entry) => entry.item);
+  const searchResults = grounded.map((entry) => entry.item);
 
   // Extract all formulas
   const allFormulas: string[] = [];
@@ -67,9 +103,14 @@ export function retrieveMathematicsKnowledge(
   let groundingContextText = '';
   if (primaryConcept) {
     groundingContextText = `[MATHEMATICAL KNOWLEDGE GROUNDING]\n` +
+      `Language: ${query.language || 'auto'}\n` +
       `Primary Concept: ${primaryConcept.concept} (${primaryConcept.topic} / ${primaryConcept.subtopic})\n` +
       `Definition: ${primaryConcept.definition}\n` +
+      `Notation: ${primaryConcept.notation}\n` +
       `Formulas: ${primaryConcept.formulas.join('; ')}\n` +
+      (primaryConcept.theorems?.length ? `Theorems: ${primaryConcept.theorems.join('; ')}\n` : '') +
+      (primaryConcept.identities?.length ? `Identities: ${primaryConcept.identities.join('; ')}\n` : '') +
+      (primaryConcept.examples.length ? `Verified Examples: ${primaryConcept.examples.map(example => `${example.problem} -> ${example.solution}`).join(' | ')}\n` : '') +
       `Domain Restrictions & Conditions: ${primaryConcept.domainRestrictions.join('; ')}\n` +
       (primaryConcept.assumptions.length > 0 ? `Assumptions: ${primaryConcept.assumptions.join('; ')}\n` : '') +
       (primaryConcept.commonMistakes.length > 0

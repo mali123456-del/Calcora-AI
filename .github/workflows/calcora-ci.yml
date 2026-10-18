@@ -9,26 +9,57 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npm run verify
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set +e
+          npm install --no-audit --no-fund --verbose 2>&1 | tee install.log
+          code=${PIPESTATUS[0]}
+          exit $code
+
+      - name: Upload install log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcora-ci-install-log
+          path: install.log
+          if-no-files-found: warn
+
+      - name: Full production verification
+        shell: bash
+        run: |
+          set +e
+          npm run verify 2>&1 | tee verify.log
+          code=${PIPESTATUS[0]}
+          exit $code
+
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calcora-ci-verification-log
+          path: verify.log
+          if-no-files-found: warn
 
   windows-package:
     runs-on: windows-latest
     needs: verify
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npm run dist:win
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build Windows artifacts
+        run: npm run dist:win
       - uses: actions/upload-artifact@v4
         with:
           name: calcora-windows

@@ -1,16 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" role="img" aria-label="Calcora AI">
+  <!-- ==========================================================================
+       Calcora AI — original icon identity.
+       Concept: "the solved curve". A single verified function rising across a
+       measured axis, terminating in an open solution node.
+
+       Built for the three sizes that actually matter:
+         1024  tile + glow + hairline + axis + ticks + curve + node
+         128   curve and node still separate; ticks collapse to texture
+         16    tile + one bold cyan stroke — still reads as "a plotted result",
+               never as noise.
+
+       Deliberate choices:
+         * dark navy tile, not a cyan→indigo→purple wash. The app's accent is a
+           single cyan; the icon must match the UI it belongs to, and a dark
+           tile keeps its edge on both a light and a dark taskbar.
+         * no text, no logo lockup, no gradients inside the glyph itself — the
+           glyph stays one colour so it survives ICO resampling.
+         * generous margin (180u) so Windows' own scaling and macOS' rounded
+           mask never clip the mark.
+       ========================================================================== -->
   <defs>
-    <linearGradient id="calcora-brand" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#06b6d4" />
-      <stop offset="0.5" stop-color="#4f46e5" />
-      <stop offset="1" stop-color="#9333ea" />
+    <linearGradient id="calcora-surface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121E33" />
+      <stop offset="1" stop-color="#070C16" />
+    </linearGradient>
+
+    <radialGradient id="calcora-glow" cx="0.74" cy="0.28" r="0.78">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.26" />
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="calcora-curve" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#0EA5E9" />
+      <stop offset="0.55" stop-color="#22D3EE" />
+      <stop offset="1" stop-color="#67E8F9" />
     </linearGradient>
   </defs>
-  <rect width="1024" height="1024" rx="232" fill="url(#calcora-brand)" />
-  <g transform="translate(176 176) scale(28)" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.1">
-    <rect width="16" height="20" x="4" y="2" rx="2" />
-    <path d="M8 6h8" />
-    <path d="M16 14v4" />
-    <path d="M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01" />
+
+  <!-- Platform-neutral container: reads as a Windows .ico, a macOS .icns tile
+       and a Linux desktop-entry icon without platform-specific art. -->
+  <rect width="1024" height="1024" rx="232" fill="url(#calcora-surface)" />
+  <rect width="1024" height="1024" rx="232" fill="url(#calcora-glow)" />
+  <rect x="5" y="5" width="1014" height="1014" rx="228" fill="none"
+        stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="11" />
+
+  <!-- Measured axis. Drops to texture below 48px, which is the intended
+       graceful degradation: the curve must always win. -->
+  <g stroke="#FFFFFF" stroke-linecap="round">
+    <path d="M186 866 H838" stroke-opacity="0.18" stroke-width="17" />
+    <path d="M312 866 V828 M512 866 V828 M712 866 V828"
+          stroke-opacity="0.16" stroke-width="13" />
   </g>
+
+  <!-- The solved curve: one monotonic rise (y strictly decreases, so there is
+       no plateau to wobble at small sizes), eased flat at both ends so it
+       reads as a plotted function rather than a zig-zag. -->
+  <path d="M202 780 C 380 780 416 596 512 516 C 604 438 650 348 806 348"
+        stroke="url(#calcora-curve)" stroke-width="100"
+        stroke-linecap="round" stroke-linejoin="round" fill="none" />
+
+  <!-- Solution node: an open ring so the curve appears to arrive at an answer
+       instead of simply stopping. -->
+  <circle cx="806" cy="348" r="78" fill="#0B1220" />
+  <circle cx="806" cy="348" r="78" stroke="url(#calcora-curve)" stroke-width="46" fill="none" />
 </svg>

@@ -14,7 +14,7 @@ import { getOfflinePolicy, type PrivacyMode } from './offlinePolicy';
 import { detectLanguageFromText } from '../services/multilingualTutorKnowledge';
 import { activeDocumentToContext } from '../services/activeDocument';
 import { selectRelevantChunks, toPagePayload } from '../services/documentContext';
-import { VERIFICATION_STATES, type VerificationOutcome } from '../verification/verificationStates';
+import { VERIFICATION_STATES, unverified, type VerificationOutcome } from '../verification/verificationStates';
 import { verifyCalculation, verifyEquation, verifyUnsupported } from '../verification/independentVerifier';
 
 export interface AIResponse {
@@ -129,6 +129,28 @@ export interface TutoringRequestOptions {
   responseProfile?: 'quick' | 'deep' | 'balanced';
   /** Opaque model ID returned by Calcora's local model discovery endpoint. */
   localModelId?: string;
+  /**
+   * Upper bound, in milliseconds, on the Tutor request. Defaults to
+   * {@link AI_REQUEST_TIMEOUT_MS}. The request must always be bounded: an unbounded
+   * `fetch` leaves the caller awaiting forever, so neither the panel's `catch` nor its
+   * `finally` can run and the prompt input stays disabled for the rest of the session.
+   */
+  requestTimeoutMs?: number;
+}
+
+/**
+ * Default ceiling for a single Tutor request. It sits above the backend's own worst
+ * case (`CALCORA_LOCAL_MODEL_TIMEOUT_MS`, 180000 ms) so a legitimate slow on-device
+ * answer is never cut off, while a wedged backend can no longer hang the UI forever.
+ */
+export const AI_REQUEST_TIMEOUT_MS = 200_000;
+
+/** Names the abort so the catch can report a timeout rather than a transport failure. */
+function isTimeoutError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
 }
 
 export async function askAIMathAssistant(prompt: string, conversation: AIMessage[] = [], currentExpression?: string, currentResult?: string, mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain', tutorOptions: TutoringRequestOptions = {}): Promise<AIResponse> {
@@ -169,18 +191,38 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
       }))
     : [];
 
+  const requestTimeoutMs =
+    typeof tutorOptions.requestTimeoutMs === 'number' && tutorOptions.requestTimeoutMs > 0
+      ? tutorOptions.requestTimeoutMs
+      : AI_REQUEST_TIMEOUT_MS;
+
+  // Bound the request. Without this the promise below never settles when the backend
+  // wedges, so the UI stays disabled indefinitely instead of falling back.
+  const abortController = new AbortController();
+  const timeoutHandle = setTimeout(() => abortController.abort(), requestTimeoutMs);
+
   try {
     const res = await fetch('/api/ai/math', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortController.signal,
 body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpression, currentResult, mode, tutorMode: tutorOptions.tutorMode || 'assistant', learningObjective: tutorOptions.learningObjective || 'concept', difficulty: tutorOptions.difficulty || 'intermediate', topic: tutorOptions.topic || 'Algebra', hintLevel: tutorOptions.hintLevel || 1, socraticMode: tutorOptions.socraticMode || false, userStep: tutorOptions.userStep, groundingContext: tutorOptions.groundingContext, groundedConcepts: tutorOptions.groundedConcepts, audienceProfile, deterministicVerification, language, responseProfile, offlineOnly, localModelId: offlineOnly && !documentContext && typeof tutorOptions.localModelId === 'string' && /^gguf-[a-f0-9]{16}$/.test(tutorOptions.localModelId) ? tutorOptions.localModelId : undefined, document: documentContext ? { fileName: documentContext.fileName, pageCount: documentContext.pageCount, selectedPageCount: documentContext.pages.length, hasText: documentContext.hasText, needsOcr: documentContext.needsOcr, pages: toPagePayload(documentContext, selectRelevantChunks(documentContext, prompt)) } : null }),
       });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Server responded with HTTP ${res.status}`);
     const data = await res.json();
     const rawExpr = data.expression || null;
-    const serverVerified = Boolean(data.deterministicVerified) && typeof data.deterministicResult === 'string';
-    const handshake = verifyWithDeterministicEngine(rawExpr);
-    const verifiedResult = serverVerified ? String(data.deterministicResult) : (handshake.verifiedResult || undefined);
+    const serverVerification = normalizeServerVerification(data.verification) ?? undefined;
+    const reportedResult = typeof data.deterministicResult === 'string' ? data.deterministicResult : undefined;
+    const legacyVerification = rawExpr && reportedResult
+      ? rawExpr.includes('=')
+        ? verifyEquation(rawExpr, reportedResult.split(',').map((root: string) => root.trim()).filter(Boolean))
+        : verifyCalculation(rawExpr, reportedResult)
+      : undefined;
+    const verification = serverVerification
+      ?? legacyVerification
+      ?? unverified('The server response did not include a checkable deterministic result.');
+    const serverVerified = Boolean(reportedResult) && verification.state === 'VERIFIED';
+    const verifiedResult = serverVerified ? reportedResult : undefined;
     const concealsFinal = ['socratic', 'hint', 'quiz', 'challenge', 'exam'].includes(String(tutorOptions.tutorMode));
     const answer = serverVerified && !concealsFinal
       ? `${verifiedResult}${data.answer ? `\\n\\n${data.answer}` : ''}`
@@ -191,22 +233,36 @@ body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpress
     const responseSource = groundedSource
       ?? (data.meta?.responseSource === 'local-model' ? 'local-model' : undefined)
       ?? (data.geminiState === 'GEMINI_CONFIGURED' ? 'gemini' : data.isOfflineFallback ? 'local-deterministic' : undefined);
-    // The server's canonical outcome is authoritative for the badge. It is never
-    // reconstructed from the legacy boolean, because that boolean cannot express the
-    // difference between "not checked" and "the check disagreed".
-    const verification = normalizeServerVerification(data.verification) ?? undefined;
-    return { answer, expression: rawExpr, steps: serverVerified && Array.isArray(data.deterministicSteps) && data.deterministicSteps.length ? data.deterministicSteps.concat(data.steps || []) : (data.steps || []), formula: data.formula || null, isVerified: verification ? verification.state === 'VERIFIED' : (serverVerified || handshake.isVerified), verificationNote: verification?.reason ?? (serverVerified ? 'Verified by Calcora deterministic server tool' : handshake.verificationNote), verification, verifiedResult, isOfflineFallback: Boolean(data.isOfflineFallback), responseSource, providerMessage: typeof data.providerMessage === 'string' ? data.providerMessage : undefined };
+    // The server's canonical outcome wins over its legacy boolean and any client-side
+    // handshake. A result may be surfaced as verified only when that outcome is VERIFIED.
+    return { answer, expression: rawExpr, steps: serverVerified && Array.isArray(data.deterministicSteps) && data.deterministicSteps.length ? data.deterministicSteps.concat(data.steps || []) : (data.steps || []), formula: data.formula || null, isVerified: verification.state === 'VERIFIED', verificationNote: verification.reason, verification, verifiedResult, isOfflineFallback: Boolean(data.isOfflineFallback), responseSource, providerMessage: typeof data.providerMessage === 'string' ? data.providerMessage : undefined };
   } catch (error) {
-    console.warn('AI API call failed; using the local deterministic fallback.');
+    const timedOut = isTimeoutError(error);
+    console.warn(
+      timedOut
+        ? `AI Tutor request timed out after ${requestTimeoutMs} ms; using the local deterministic fallback.`
+        : 'AI API call failed; using the local deterministic fallback.',
+    );
     const fallback = fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions);
     const status = error instanceof Error ? error.message.match(/HTTP (\d{3})/)?.[1] : undefined;
     const statusDetail = status ? ` (HTTP ${status})` : '';
+    if (timedOut) {
+      // Never imply an AI answered: nothing did. Name the bound so the stall is legible.
+      return {
+        ...fallback,
+        providerMessage: privacy.allowCloudAI
+          ? `The Tutor request timed out after ${requestTimeoutMs} ms and was stopped waiting. The response below was computed by Calcora's deterministic engine; no AI provider answered.`
+          : `Private/Offline mode is active. The Tutor request timed out after ${requestTimeoutMs} ms and was stopped waiting; only Calcora's deterministic engine produced the response below.`,
+      };
+    }
     return {
       ...fallback,
       providerMessage: privacy.allowCloudAI
         ? `Gemini or the local Tutor API could not be reached${statusDetail}. The response below came from Calcora's client-side deterministic fallback; no cloud response was received.`
         : 'Private/Offline mode is active. The local Tutor API could not be reached; only the client-side deterministic fallback was used.',
     };
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 }
 
@@ -228,10 +284,19 @@ function fallbackLocalMathTutor(prompt: string, currentExpression?: string, curr
     };
   }
   if (p.toLowerCase().includes('solve') || p.includes('=')) {
-    const eqRes = solveEquation(p.replace(/solve/i, '').trim());
+    const equation = p.replace(/solve/i, '').trim();
+    const eqRes = solveEquation(equation);
     if (eqRes.isValid) {
-      const eqVerification = verifyCalculation(p.replace(/solve/i, '').trim(), eqRes.solutions.join(', '));
-      return { answer: eqRes.explanation, steps: eqRes.steps, formula: eqRes.type === 'quadratic' ? 'x = (-b ± √(b² - 4ac)) / (2a)' : 'ax + b = 0 ⇒ x = -b/a', isVerified: eqVerification.state === 'VERIFIED', verificationNote: eqVerification.reason, verification: eqVerification, isOfflineFallback: true };
+      const roots = eqRes.solutions.map((root: number) => String(root).trim()).filter(Boolean);
+      // A solved equation is verified by substituting its roots back into the equation.
+      // Checking the root against the value of the whole left-hand side would mark a
+      // correct solution UNVERIFIED (x = 5 against 2x + 5 = 15), so that comparison is
+      // only valid when the expression has no '=' to solve for.
+      const eqVerification = equation.includes('=')
+        ? verifyEquation(equation, roots)
+        : verifyCalculation(equation, eqRes.solutions.join(', '));
+      const isVerified = eqVerification.state === 'VERIFIED';
+      return { answer: eqRes.explanation, steps: eqRes.steps, formula: eqRes.type === 'quadratic' ? 'x = (-b ± √(b² - 4ac)) / (2a)' : 'ax + b = 0 ⇒ x = -b/a', isVerified, verificationNote: isVerified ? `Each root was substituted back into ${equation}.` : eqVerification.reason, verification: eqVerification, verifiedResult: isVerified ? eqRes.solutions.join(', ') : undefined, isOfflineFallback: true };
     }
   }
   const pctMatch = p.match(/(\d+\.?\d*)\s*%\s*(?:of)?\s*(\d+\.?\d*)/i);
