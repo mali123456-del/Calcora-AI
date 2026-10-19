@@ -39,6 +39,12 @@ import { generatePracticeSet, generateQuiz } from './src/services/practiceGenera
 import { fromAgentStatus } from './src/verification/verificationStates';
 import { localGgufRuntime, LocalGgufRuntimeError } from './src/services/localGgufRuntime';
 import { localExplanationMatchesDeterministicResult } from './src/services/localExplanationGuard';
+import { globalDocumentIntelligence } from './src/services/documentIntelligence';
+import { globalWebResearcher, fetchAndExtractText } from './src/services/webResearch';
+import { validateDocumentFile } from './src/services/intelligenceSync';
+import { globalModelManager } from './src/services/universalModelManager';
+import { orchestrateEvidence } from './src/services/evidenceOrchestrator';
+import { globalPrivacyEngine } from './src/services/privacyPolicyEngine';
 
 const APP_ROOT = process.env.CALCORA_APP_ROOT?.trim() || process.cwd();
 dotenv.config({ path: path.join(APP_ROOT, '.env') });
@@ -251,6 +257,155 @@ export async function startServer(): Promise<Server> {
       console.error('Math tool endpoint error:', error);
       return res.status(400).json({ success:false, error:'Invalid math tool request' });
     }
+  });
+
+  // --- Phase 3A: Document Intelligence Endpoints ---
+  app.post('/api/documents/ingest', async (req, res) => {
+    try {
+      const { fileName, base64Content, mimeType } = req.body ?? {};
+      if (typeof fileName !== 'string' || !fileName.trim()) {
+        return res.status(400).json({ success: false, error: 'A valid fileName is required.' });
+      }
+      if (typeof base64Content !== 'string' || !base64Content.trim()) {
+        return res.status(400).json({ success: false, error: 'base64Content is required.' });
+      }
+      const buffer = Buffer.from(base64Content, 'base64');
+      const meta = await globalDocumentIntelligence.ingestDocument(fileName, buffer, { mimeType });
+      return res.json({ success: true, document: meta });
+    } catch (error) {
+      console.error('Document ingestion error:', error instanceof Error ? error.message : 'unknown');
+      return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to ingest document.' });
+    }
+  });
+
+  app.get('/api/documents', (_req, res) => {
+    return res.json({ success: true, documents: globalDocumentIntelligence.listDocuments() });
+  });
+
+  app.delete('/api/documents/:id', (req, res) => {
+    const deleted = globalDocumentIntelligence.deleteDocument(req.params.id);
+    return res.json({ success: deleted });
+  });
+
+  app.post('/api/documents/search', (req, res) => {
+    const { query, documentId, topK } = req.body ?? {};
+    if (typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ success: false, error: 'Query is required.' });
+    }
+    const results = globalDocumentIntelligence.search(query, { documentId, topK });
+    return res.json({ success: true, results });
+  });
+
+  app.post('/api/documents/validate', (req, res) => {
+    try {
+      const { fileName, base64Content, mimeType } = req.body ?? {};
+      if (typeof fileName !== 'string' || !fileName.trim()) {
+        return res.status(400).json({ success: false, error: 'A valid fileName is required.' });
+      }
+      if (typeof base64Content !== 'string') {
+        return res.status(400).json({ success: false, error: 'base64Content is required.' });
+      }
+      const buffer = Buffer.from(base64Content, 'base64');
+      const validation = validateDocumentFile(fileName, buffer, mimeType);
+      return res.json({ success: true, validation });
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Validation failed' });
+    }
+  });
+
+  // --- Phase 3B: Controlled Web Research Endpoints ---
+  app.post('/api/web/research', async (req, res) => {
+    try {
+      const { query, seedUrls } = req.body ?? {};
+      if (typeof query !== 'string' || !query.trim()) {
+        return res.status(400).json({ success: false, error: 'Query is required.' });
+      }
+      const result = await globalWebResearcher.research(query, Array.isArray(seedUrls) ? seedUrls : []);
+      return res.json({ success: true, result });
+    } catch (error) {
+      console.error('Web research error:', error instanceof Error ? error.message : 'unknown');
+      return res.status(500).json({ success: false, error: 'Web research failed.' });
+    }
+  });
+
+  app.post('/api/web/fetch', async (req, res) => {
+    try {
+      const { url } = req.body ?? {};
+      if (typeof url !== 'string' || !url.trim()) {
+        return res.status(400).json({ success: false, error: 'A valid url is required.' });
+      }
+      const result = await fetchAndExtractText(url);
+      return res.json({ success: result.success, result });
+    } catch (error) {
+      console.error('Web fetch error:', error instanceof Error ? error.message : 'unknown');
+      return res.status(500).json({ success: false, error: 'Web fetch failed.' });
+    }
+  });
+
+  // --- Phase 3C: Universal Model Registry Endpoints ---
+  app.get('/api/models/registry', async (_req, res) => {
+    try {
+      const registry = await globalModelManager.getProviderRegistryStatus();
+      return res.json({ success: true, registry });
+    } catch (error) {
+      console.error('Model registry error:', error instanceof Error ? error.message : 'unknown');
+      return res.status(500).json({ success: false, error: 'Failed to retrieve model registry.' });
+    }
+  });
+
+  app.post('/api/models/complete', async (req, res) => {
+    try {
+      const { prompt, privacyMode = 'local-only', preferredCapability } = req.body ?? {};
+      if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ success: false, error: 'Prompt is required.' });
+      }
+      const response = await globalModelManager.complete({
+        prompt,
+        privacyMode,
+        preferredCapability,
+      });
+      return res.json({ success: true, response });
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Model execution failed.' });
+    }
+  });
+
+  // --- Phase 3D: Evidence-Aware Orchestration Endpoints ---
+  app.post('/api/orchestrate/evidence', async (req, res) => {
+    try {
+      const { prompt, privacyMode = 'local-only', allowWebResearch, documentId, seedWebUrls } = req.body ?? {};
+      if (typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ success: false, error: 'Prompt is required.' });
+      }
+      const result = await orchestrateEvidence({
+        prompt,
+        privacyMode,
+        allowWebResearch,
+        documentId,
+        seedWebUrls,
+      });
+      return res.json({ success: true, result });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Evidence orchestration failed.' });
+    }
+  });
+
+  // --- Phase 3E: Privacy Policy & Data Retention Endpoints ---
+  app.get('/api/privacy/policy', (_req, res) => {
+    return res.json({ success: true, policy: globalPrivacyEngine.getPolicy() });
+  });
+
+  app.post('/api/privacy/policy', (req, res) => {
+    const { allowCloudTransmission } = req.body ?? {};
+    if (typeof allowCloudTransmission === 'boolean') {
+      globalPrivacyEngine.updatePolicy({ allowCloudTransmission });
+    }
+    return res.json({ success: true, policy: globalPrivacyEngine.getPolicy() });
+  });
+
+  app.post('/api/privacy/purge', (_req, res) => {
+    const result = globalPrivacyEngine.purgeAllUserData();
+    return res.json({ success: true, ...result });
   });
 
   // Adaptive learning + bounded Math Agent endpoints.
