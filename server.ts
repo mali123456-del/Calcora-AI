@@ -22,6 +22,7 @@ import { classifyGeminiError, getGeminiCredentialState } from './src/services/ge
 import { parseGeminiJsonResponse } from './src/services/geminiRuntime';
 import { getServerHost, getServerPort, resolveGeminiApiKey } from './electron/runtimeConfig';
 import { isAuthorizationTokenValid } from './src/services/requestSecurity';
+import { createAdminApiAuthorizationMiddleware } from './src/services/adminApiPolicy';
 import { createRateLimitMiddleware } from './src/services/requestRateLimit';
 import { createCorsMiddleware, createOriginPolicy } from './src/services/corsPolicy';
 import { buildContentSecurityPolicy, shouldSendContentSecurityPolicy } from './src/services/contentSecurityPolicy';
@@ -183,6 +184,17 @@ export async function startServer(): Promise<Server> {
   app.use('/api/ai/tutor/orchestrate', createRateLimitMiddleware(30, 60_000));
   app.use('/api/ai/math', createRateLimitMiddleware(8, 60_000));
   app.use('/api/ai/math', createRateLimitMiddleware(120, 60 * 60_000));
+  app.use('/api/documents', createRateLimitMiddleware(60, 60_000));
+  app.use('/api/documents/ingest', createRateLimitMiddleware(5, 60_000));
+  app.use('/api/web', createRateLimitMiddleware(20, 60_000));
+  app.use('/api/models/complete', createRateLimitMiddleware(10, 60_000));
+  app.use('/api/orchestrate/evidence', createRateLimitMiddleware(20, 60_000));
+  app.use('/api/privacy/purge', createRateLimitMiddleware(2, 60_000));
+  app.use(['/api/documents', '/api/web', '/api/models', '/api/orchestrate/evidence', '/api/privacy'], createAdminApiAuthorizationMiddleware({
+    isDesktop: process.env.CALCORA_DESKTOP === '1',
+    isProduction: process.env.NODE_ENV === 'production',
+    token: process.env.CALCORA_ADMIN_TOKEN,
+  }));
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const ENV_KEYS = [
   'CALCORA_MANUAL_START', 'CALCORA_PORT', 'CALCORA_HOST', 'CALCORA_DESKTOP', 'NODE_ENV',
   'CALCORA_INTELLIGENCE_SCAN_TOKEN', 'CALCORA_LEARNING_EVALUATION_TOKEN',
-  'CALCORA_ALLOW_PUBLIC_GEMINI', 'GEMINI_API_KEY', 'CALCORA_RUNTIME_PORT',
+  'CALCORA_ALLOW_PUBLIC_GEMINI', 'GEMINI_API_KEY', 'CALCORA_RUNTIME_PORT', 'CALCORA_ADMIN_TOKEN',
 ] as const;
 
 async function main() {
@@ -12,8 +12,10 @@ async function main() {
   try {
     process.env.CALCORA_MANUAL_START = '1';
     process.env.CALCORA_PORT = '0';
-    process.env.CALCORA_DESKTOP = '1';
+    process.env.CALCORA_DESKTOP = '0';
+    process.env.CALCORA_HOST = '127.0.0.1';
     process.env.NODE_ENV = 'production';
+    process.env.CALCORA_ADMIN_TOKEN = 'test-admin-token-must-have-at-least-32-characters';
     process.env.CALCORA_INTELLIGENCE_SCAN_TOKEN = 'test-operator-token';
     process.env.CALCORA_LEARNING_EVALUATION_TOKEN = 'test-learning-token';
     const { startServer } = await import('../server');
@@ -67,6 +69,19 @@ async function main() {
 
     const learningUnauthorized = await fetch(`${base}/api/ai/learning/evaluate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(learningUnauthorized.status, 401);
+
+    const protectedDocuments = await fetch(`${base}/api/documents`, { headers: { 'x-calcora-admin-token': 'wrong-token' } });
+    assert.equal(protectedDocuments.status, 401, 'document access requires the server-only admin token in production');
+    const protectedPurge = await fetch(`${base}/api/privacy/purge`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(protectedPurge.status, 401, 'data purge cannot be triggered without authorization');
+    const authorizedDocuments = await fetch(`${base}/api/documents`, { headers: { 'x-calcora-admin-token': process.env.CALCORA_ADMIN_TOKEN! } });
+    assert.equal(authorizedDocuments.status, 200, 'authorized document access remains available');
+    assert.deepEqual(await authorizedDocuments.json(), { success: true, documents: [] });
+    const adminPreflight = await fetch(`${base}/api/documents`, {
+      method: 'OPTIONS',
+      headers: { origin: `http://127.0.0.1:${address.port}`, 'access-control-request-headers': 'x-calcora-admin-token' },
+    });
+    assert.match(adminPreflight.headers.get('access-control-allow-headers') ?? '', /x-calcora-admin-token/i);
 
     const tooLong = await fetch(`${base}/api/ai/math`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'x'.repeat(1001) }) });
     assert.equal(tooLong.status, 400);

@@ -32,7 +32,7 @@ export interface OriginPolicy {
 }
 
 const ALLOWED_METHODS = 'GET, POST, OPTIONS';
-const ALLOWED_HEADERS = 'Content-Type, X-Calcora-Learning-Token, X-Calcora-Intelligence-Token';
+const ALLOWED_HEADERS = 'Content-Type, X-Calcora-Admin-Token, X-Calcora-Learning-Token, X-Calcora-Intelligence-Token';
 
 /**
  * Parses a comma-separated origin allowlist.
