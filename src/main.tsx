@@ -10,13 +10,15 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Avoid caching Vite's development server. In production, BASE_URL keeps registration
-// compatible with deployments hosted below the domain root.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    const serviceWorkerUrl = `${import.meta.env.BASE_URL}sw.js`;
-    navigator.serviceWorker.register(serviceWorkerUrl).catch((error: unknown) => {
-      console.warn('Calcora offline support could not be registered:', error);
+  const registerOfflineWorker = () => {
+    const workerUrl = `${import.meta.env.BASE_URL}sw.js`;
+    void navigator.serviceWorker.register(workerUrl).catch(() => {
+      // Offline support is progressive; never surface a registration failure as an app error.
+      console.warn('Calcora offline support is unavailable in this browser context.');
     });
-  }, { once: true });
+  };
+
+  if (document.readyState === 'complete') registerOfflineWorker();
+  else window.addEventListener('load', registerOfflineWorker, { once: true });
 }
