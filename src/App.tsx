@@ -34,16 +34,44 @@ const DeveloperPanel = lazy(() => import('./components/DeveloperPanel'));
 import { ActiveTab, HistoryItem } from './types';
 import { traceCalculatorState } from './services/developerTrace';
 import { History as HistoryIcon } from 'lucide-react';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('calculator');
   const [isVerificationOpen, setIsVerificationOpen] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false);
   const [showDesktopHistory, setShowDesktopHistory] = useState(true);
   const [pendingTutorPrompt, setPendingTutorPrompt] = useState<string | undefined>();
   const { theme, setTheme } = useTheme(); const calc = useCalculator();
-  useEffect(() => { const handleKeyDown = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setIsCommandPaletteOpen((prev) => !prev); } }; window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, []);
-  useKeyboard({ onDigit: calc.inputDigit, onDecimal: calc.inputDecimal, onOperator: calc.inputOperator, onParenthesis: calc.inputParenthesis, onCalculate: calc.calculate, onClear: calc.clearAll, onBackspace: calc.backspace, onFactorial: calc.inputFactorial }, activeTab === 'calculator' && !isCommandPaletteOpen && !isVerificationOpen && !isWorkspaceOpen);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target;
+      const isEditable = target instanceof HTMLElement && (
+        target.isContentEditable ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        Boolean(target.closest('[contenteditable="true"], [role="textbox"]'))
+      );
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        if (isEditable || isKeyboardShortcutsOpen) return;
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditable) {
+        if (isCommandPaletteOpen || isVerificationOpen || isWorkspaceOpen) return;
+        e.preventDefault();
+        setIsKeyboardShortcutsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCommandPaletteOpen, isKeyboardShortcutsOpen, isVerificationOpen, isWorkspaceOpen]);
+  useKeyboard({ onDigit: calc.inputDigit, onDecimal: calc.inputDecimal, onOperator: calc.inputOperator, onParenthesis: calc.inputParenthesis, onCalculate: calc.calculate, onClear: calc.clearAll, onBackspace: calc.backspace, onFactorial: calc.inputFactorial }, activeTab === 'calculator' && !isCommandPaletteOpen && !isVerificationOpen && !isWorkspaceOpen && !isKeyboardShortcutsOpen);
   const handleApplyToCalculator = (expr: string) => { calc.applyExpressionDirectly(expr); setActiveTab('calculator'); };
   const handleAutoCalculateFromTutor = (expr: string) => { calc.applyExpressionAndCalculate(expr); setActiveTab('calculator'); };
   const handleSendMultimodalToTutor = useCallback((prompt: string) => { setPendingTutorPrompt(prompt); setActiveTab('ai'); }, []);
@@ -88,6 +116,6 @@ export default function App() {
 {(activeTab === 'ai' || activeTab === 'tutor') && <AIAssistantPanel currentExpression={calc.expression} currentResult={calc.currentInput} onApplyToCalculator={handleApplyToCalculator} onAutoCalculate={handleAutoCalculateFromTutor} initialPrompt={pendingTutorPrompt} onInitialPromptConsumed={handleConsumeTutorPrompt} />}
     </Suspense>
     </main>
-    <VerificationModal isOpen={isVerificationOpen} onClose={() => setIsVerificationOpen(false)} /><WorkspaceModal isOpen={isWorkspaceOpen} onClose={() => setIsWorkspaceOpen(false)} currentHistory={calc.history} onLoadHistory={handleLoadWorkspaceHistory} /><CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} setActiveTab={setActiveTab} setAngleMode={calc.setAngleMode} setTheme={setTheme} onOpenVerification={() => setIsVerificationOpen(true)} onOpenWorkspaces={() => setIsWorkspaceOpen(true)} />
+    <KeyboardShortcutsModal isOpen={isKeyboardShortcutsOpen} onClose={() => setIsKeyboardShortcutsOpen(false)} /><VerificationModal isOpen={isVerificationOpen} onClose={() => setIsVerificationOpen(false)} /><WorkspaceModal isOpen={isWorkspaceOpen} onClose={() => setIsWorkspaceOpen(false)} currentHistory={calc.history} onLoadHistory={handleLoadWorkspaceHistory} /><CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} setActiveTab={setActiveTab} setAngleMode={calc.setAngleMode} setTheme={setTheme} onOpenVerification={() => setIsVerificationOpen(true)} onOpenWorkspaces={() => setIsWorkspaceOpen(true)} />
   </div>;
 }
