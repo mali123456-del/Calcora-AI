@@ -143,6 +143,42 @@ export async function validateSafeUrlForFetch(rawUrl: string): Promise<{ safe: b
 /**
  * Parses simple robots.txt content to determine if a URL path is allowed.
  */
+export async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string> {
+  const limit = Number.isFinite(maxBytes) ? Math.max(0, Math.floor(maxBytes)) : 0;
+  if (limit === 0 || !response.body) return '';
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (totalBytes < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limit - totalBytes;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      if (chunk.byteLength > 0) {
+        chunks.push(chunk);
+        totalBytes += chunk.byteLength;
+      }
+      if (chunk.byteLength < value.byteLength || totalBytes === limit) {
+        await reader.cancel();
+        break;
+      }
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  }
+
+  const boundedBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    boundedBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(boundedBytes);
+}
+
 export function isPathAllowedByRobots(robotsTxt: string, pathname: string, userAgent = '*'): boolean {
   const lines = robotsTxt.split(/\r?\n/);
   let activeAgent = false;
@@ -234,17 +270,64 @@ export async function fetchAndExtractText(urlStr: string, options: Partial<Crawl
  */
 export class ControlledWebResearcher {
   private cache = new Map<string, { source: WebResearchSource; expiresAt: number }>();
+  private robotsCache = new Map<string, { rules: string | null; expiresAt: number }>();
   private readonly CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  private readonly ROBOTS_MAX_BYTES = 64 * 1024;
+
+  constructor(
+    private readonly validateUrl: typeof validateSafeUrlForFetch = validateSafeUrlForFetch,
+    private readonly fetcher: typeof fetch = fetch,
+  ) {}
+
+  private async isRobotsAllowed(url: URL, timeoutMs: number): Promise<boolean> {
+    const cached = this.robotsCache.get(url.origin);
+    let rules = cached && cached.expiresAt > Date.now() ? cached.rules : undefined;
+
+    if (rules === undefined) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await this.fetcher(new URL('/robots.txt', url.origin), {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'CalcoraAI-ResearchBot/1.0 (+https://calcora.app/bot)' },
+          redirect: 'manual',
+        });
+        if (response.status === 404) rules = '';
+        else if (!response.ok || response.status !== 200) rules = null;
+        else {
+          const candidate = await readBoundedResponseText(response, this.ROBOTS_MAX_BYTES + 1);
+          rules = new TextEncoder().encode(candidate).byteLength > this.ROBOTS_MAX_BYTES ? null : candidate;
+        }
+      } catch {
+        rules = null;
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      this.robotsCache.set(url.origin, { rules, expiresAt: Date.now() + 10 * 60 * 1000 });
+      if (this.robotsCache.size > 128) {
+        const now = Date.now();
+        for (const [origin, entry] of this.robotsCache) {
+          if (now >= entry.expiresAt) this.robotsCache.delete(origin);
+          if (this.robotsCache.size <= 128) break;
+        }
+        if (this.robotsCache.size > 128) this.robotsCache.delete(this.robotsCache.keys().next().value as string);
+      }
+    }
+
+    return rules !== null && isPathAllowedByRobots(rules, url.pathname, 'CalcoraAI-ResearchBot');
+  }
 
   /**
    * Fetches a single page securely under SSRF and size bounds.
    */
   public async fetchSafePage(urlStr: string, options: Partial<CrawlLimits> = {}): Promise<WebResearchSource | null> {
     const limits = { ...DEFAULT_CRAWL_LIMITS, ...options };
-    const validation = await validateSafeUrlForFetch(urlStr);
+    const validation = await this.validateUrl(urlStr);
     if (!validation.safe || !validation.resolvedUrl) {
       return null;
     }
+    if (!await this.isRobotsAllowed(validation.resolvedUrl, limits.timeoutMs)) return null;
 
     const cached = this.cache.get(urlStr);
     if (cached && cached.expiresAt > Date.now()) {
@@ -255,7 +338,7 @@ export class ControlledWebResearcher {
     const timeout = setTimeout(() => controller.abort(), limits.timeoutMs);
 
     try {
-      const response = await fetch(validation.resolvedUrl.toString(), {
+      const response = await this.fetcher(validation.resolvedUrl.toString(), {
         signal: controller.signal,
         headers: {
           'User-Agent': 'CalcoraAI-ResearchBot/1.0 (+https://calcora.app/bot)',
@@ -278,8 +361,7 @@ export class ControlledWebResearcher {
 
       if (!response.ok) return null;
 
-      const raw = await response.text();
-      const boundedRaw = raw.slice(0, limits.maxSizeBytes);
+      const boundedRaw = await readBoundedResponseText(response, limits.maxSizeBytes);
       const { title, text } = extractCleanWebText(boundedRaw);
       const contentHash = createHash('sha256').update(boundedRaw).digest('hex').slice(0, 16);
       const isoDate = new Date().toISOString().split('T')[0];
@@ -344,6 +426,7 @@ export class ControlledWebResearcher {
 
   public clearCache(): void {
     this.cache.clear();
+    this.robotsCache.clear();
   }
 }
 

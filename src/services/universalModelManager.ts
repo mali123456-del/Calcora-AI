@@ -19,12 +19,17 @@ import { localGgufRuntime } from './localGgufRuntime';
 import type { LocalModelOption } from '../ai/localModels';
 import { getGeminiCredentialState } from './geminiStatus';
 import { calculateExpression } from '../engine/mathEngine';
+import { globalPrivacyEngine } from './privacyPolicyEngine';
 
 export type AIProviderType = 'local-gguf' | 'ollama' | 'gemini' | 'openai-compatible' | 'local-deterministic';
 
 export type ModelCapability = 'general' | 'math-symbolic' | 'coding' | 'fast' | 'reasoning';
 
 export type PrivacyMode = 'local-only' | 'cloud-allowed' | 'hybrid';
+
+export function permitsExternalProcessing(mode: unknown): mode is 'cloud-allowed' | 'hybrid' {
+  return mode === 'cloud-allowed' || mode === 'hybrid';
+}
 
 export interface ModelDescriptor {
   id: string;
@@ -193,7 +198,8 @@ export class UniversalModelManager {
           isLocal: true,
           capabilities: ['math-symbolic', 'reasoning'],
           contextWindow: 4096,
-          isAvailable: true,
+          isAvailable: false,
+          diagnostic: 'The Ollama adapter is not connected to the model manager.',
         },
       ],
     });
@@ -216,7 +222,8 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'math-symbolic', 'fast'],
           contextWindow: 1_000_000,
-          isAvailable: hasGeminiKey,
+          isAvailable: false,
+          diagnostic: hasGeminiKey ? 'Gemini is configured, but this model manager has no completion adapter.' : 'Gemini API key is not configured.',
         },
         {
           id: 'gemini-2.5-pro',
@@ -225,7 +232,8 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'reasoning', 'coding'],
           contextWindow: 2_000_000,
-          isAvailable: hasGeminiKey,
+          isAvailable: false,
+          diagnostic: hasGeminiKey ? 'Gemini is configured, but this model manager has no completion adapter.' : 'Gemini API key is not configured.',
         },
       ],
     });
@@ -247,7 +255,10 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'coding'],
           contextWindow: 32_768,
-          isAvailable: Boolean(oaiConfig?.apiKey || oaiConfig?.baseUrl),
+          isAvailable: false,
+          diagnostic: oaiConfig?.enabled && oaiConfig.apiKey
+            ? 'Credentials are configured, but the OpenAI-compatible completion adapter is not implemented.'
+            : 'OpenAI-compatible credentials are not configured.',
         },
       ],
     });
@@ -276,9 +287,9 @@ export class UniversalModelManager {
       }
     }
 
-    // PRIVACY ENFORCEMENT:
-    // If privacyMode === 'local-only', CLOUD PROVIDERS ARE STRICTLY FORBIDDEN.
-    if (request.privacyMode === 'local-only') {
+    // Fail closed for unknown runtime values as well as the explicit local-only mode.
+    // Only the two consented modes may enter the cloud-provider branch below.
+    if (!permitsExternalProcessing(request.privacyMode) || !globalPrivacyEngine.canSendExternalAIRequest()) {
       const ggufStatus = await localGgufRuntime.getStatus();
       if (ggufStatus.runtimeAvailable && ggufStatus.models.length > 0) {
         try {
@@ -315,27 +326,19 @@ export class UniversalModelManager {
       };
     }
 
-    // Cloud or hybrid route:
-    // In hybrid or cloud-allowed mode, check Gemini or OpenAI-compatible
+    // No live adapter is registered for the cloud providers in this manager. Do not
+    // imply a request was sent or that a model generated a response.
     const geminiConfig = this.configs.get('gemini');
     const geminiState = getGeminiCredentialState(geminiConfig?.apiKey);
-    if (geminiState.state === 'GEMINI_CONFIGURED') {
-      return {
-        content: `Gemini inference ready for grounded mathematical explanation.`,
-        provider: 'gemini',
-        modelId: 'gemini-2.5-flash',
-        isLocal: false,
-        executionTimeMs: Date.now() - startTime,
-      };
-    }
-
-    // Fallback if no cloud key configured
     return {
-      content: `No active AI provider key configured. Please configure an API key or enable local models.`,
+      content: geminiState.state === 'GEMINI_CONFIGURED'
+        ? 'Gemini is configured, but inference is not implemented by this model manager. No cloud request was made.'
+        : 'No available model adapter is configured. Deterministic calculation remains available.',
       provider: 'local-deterministic',
       modelId: 'calcora-deterministic-math',
       isLocal: true,
       executionTimeMs: Date.now() - startTime,
+      warnings: ['No cloud inference was performed because this manager has no registered cloud adapter.'],
     };
   }
 }
