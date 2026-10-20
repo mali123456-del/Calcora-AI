@@ -6,7 +6,7 @@ interface KeyboardShortcutsModalProps {
   onClose: () => void;
 }
 
-const shortcuts = [
+const SHORTCUTS = [
   { keys: ['0–9'], action: 'Enter a digit' },
   { keys: ['+', '−', '*', '/'], action: 'Add, subtract, multiply, or divide' },
   { keys: ['^'], action: 'Enter a power operator' },
@@ -16,30 +16,65 @@ const shortcuts = [
   { keys: ['.', ','], action: 'Enter a decimal point' },
   { keys: ['Enter', '='], action: 'Calculate the expression' },
   { keys: ['Backspace', 'Delete'], action: 'Remove the last entry' },
-  { keys: ['Esc'], action: 'Clear the current calculation' },
-  { keys: ['Ctrl', 'K'], action: 'Open or close the command palette' },
+  { keys: ['Esc'], action: 'Clear the current calculation in Calculator mode' },
+  { keys: ['Ctrl', '/', 'Cmd', 'K'], action: 'Open or close the command palette' },
   { keys: ['?'], action: 'Open this keyboard shortcuts guide' },
-];
+] as const;
+
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'a[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ isOpen, onClose }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    closeButtonRef.current?.focus();
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         onClose();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (!focusable?.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [isOpen, onClose]);
 
@@ -53,6 +88,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ 
       }}
     >
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="keyboard-shortcuts-title"
@@ -81,7 +117,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ 
         </header>
         <div className="max-h-[65vh] overflow-y-auto px-5 py-3">
           <dl className="divide-y divide-slate-100 dark:divide-slate-800">
-            {shortcuts.map(({ keys, action }) => (
+            {SHORTCUTS.map(({ keys, action }) => (
               <div key={action} className="flex items-center justify-between gap-4 py-3">
                 <dt className="text-sm text-slate-700 dark:text-slate-200">{action}</dt>
                 <dd className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -95,7 +131,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ 
             ))}
           </dl>
           <p className="pb-2 pt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-            Calculator keys are active only in Calculator mode and are paused while you type in a field or a dialog is open.
+            Calculator shortcuts work only in Calculator mode and pause while an editable control or dialog is active.
           </p>
         </div>
       </section>
