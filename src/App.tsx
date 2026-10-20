@@ -43,6 +43,7 @@ export default function App() {
   const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false);
   const [showDesktopHistory, setShowDesktopHistory] = useState(true);
   const [pendingTutorPrompt, setPendingTutorPrompt] = useState<string | undefined>();
+  const closeKeyboardShortcuts = useCallback(() => setIsKeyboardShortcutsOpen(false), []);
   const { theme, setTheme } = useTheme(); const calc = useCalculator();
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -116,6 +117,6 @@ export default function App() {
 {(activeTab === 'ai' || activeTab === 'tutor') && <AIAssistantPanel currentExpression={calc.expression} currentResult={calc.currentInput} onApplyToCalculator={handleApplyToCalculator} onAutoCalculate={handleAutoCalculateFromTutor} initialPrompt={pendingTutorPrompt} onInitialPromptConsumed={handleConsumeTutorPrompt} />}
     </Suspense>
     </main>
-    <KeyboardShortcutsModal isOpen={isKeyboardShortcutsOpen} onClose={() => setIsKeyboardShortcutsOpen(false)} /><VerificationModal isOpen={isVerificationOpen} onClose={() => setIsVerificationOpen(false)} /><WorkspaceModal isOpen={isWorkspaceOpen} onClose={() => setIsWorkspaceOpen(false)} currentHistory={calc.history} onLoadHistory={handleLoadWorkspaceHistory} /><CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} setActiveTab={setActiveTab} setAngleMode={calc.setAngleMode} setTheme={setTheme} onOpenVerification={() => setIsVerificationOpen(true)} onOpenWorkspaces={() => setIsWorkspaceOpen(true)} />
+    <KeyboardShortcutsModal isOpen={isKeyboardShortcutsOpen} onClose={closeKeyboardShortcuts} /><VerificationModal isOpen={isVerificationOpen} onClose={() => setIsVerificationOpen(false)} /><WorkspaceModal isOpen={isWorkspaceOpen} onClose={() => setIsWorkspaceOpen(false)} currentHistory={calc.history} onLoadHistory={handleLoadWorkspaceHistory} /><CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} setActiveTab={setActiveTab} setAngleMode={calc.setAngleMode} setTheme={setTheme} onOpenVerification={() => setIsVerificationOpen(true)} onOpenWorkspaces={() => setIsWorkspaceOpen(true)} />
   </div>;
 }
