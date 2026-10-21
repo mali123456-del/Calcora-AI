@@ -136,6 +136,13 @@ export interface TutoringRequestOptions {
    * `finally` can run and the prompt input stays disabled for the rest of the session.
    */
   requestTimeoutMs?: number;
+  /**
+   * Framing a caller-driven stop, e.g. a Stop button in the assistant panel.
+   * Aborting this signal aborts the underlying fetch immediately instead of
+   * waiting for the timeout ceiling, so a hung request never traps the UI in a
+   * loading state. A stopped request never reports an AI answer.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -200,6 +207,9 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
   // wedges, so the UI stays disabled indefinitely instead of falling back.
   const abortController = new AbortController();
   const timeoutHandle = setTimeout(() => abortController.abort(), requestTimeoutMs);
+  const externalSignal = tutorOptions.abortSignal;
+  const onExternalAbort = () => abortController.abort();
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
 
   try {
     const res = await fetch('/api/ai/math', {
@@ -237,6 +247,20 @@ body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpress
     // handshake. A result may be surfaced as verified only when that outcome is VERIFIED.
     return { answer, expression: rawExpr, steps: serverVerified && Array.isArray(data.deterministicSteps) && data.deterministicSteps.length ? data.deterministicSteps.concat(data.steps || []) : (data.steps || []), formula: data.formula || null, isVerified: verification.state === 'VERIFIED', verificationNote: verification.reason, verification, verifiedResult, isOfflineFallback: Boolean(data.isOfflineFallback), responseSource, providerMessage: typeof data.providerMessage === 'string' ? data.providerMessage : undefined };
   } catch (error) {
+    // A caller stop and the timeout ceiling both surface as AbortError, so the
+    // caller's own signal decides which one happened; the error name cannot.
+    if (externalSignal?.aborted) {
+      // The caller stopped the request. Do not substitute a fallback answer: the
+      // user asked for nothing to be produced, so be explicit that nothing arrived.
+      return {
+        answer: 'You stopped this request before it answered. No AI provider was read from and nothing else was computed.',
+        steps: [],
+        isVerified: false,
+        verificationNote: 'Request stopped by the user before any AI response arrived.',
+        isOfflineFallback: false,
+        providerMessage: 'Request stopped by you. No AI provider returned a response.',
+      };
+    }
     const timedOut = isTimeoutError(error);
     console.warn(
       timedOut
@@ -263,6 +287,7 @@ body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpress
     };
   } finally {
     clearTimeout(timeoutHandle);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
 }
 

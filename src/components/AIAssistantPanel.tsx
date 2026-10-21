@@ -358,6 +358,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const tutorContextRef = useRef<TutorConversationContext>(createTutorConversationContext());
   const [groundedConcepts, setGroundedConcepts] = useState<string[]>([]);
   const tutorConversationIdRef = useRef<string | null>(null);
+/** Aborts the in-flight Tutor request when the user presses Stop. */
+const activeRequestAbortRef = useRef<AbortController | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -590,6 +592,8 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setInputPrompt('');
     setSpeechError(null);
     setIsLoading(true);
+    const stopController = new AbortController();
+    activeRequestAbortRef.current = stopController;
 
     try {
       const response: AIResponse = await askAIMathAssistant(
@@ -611,6 +615,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           language: tutorLanguage,
           privacyMode: attachedDocument ? 'offline' : privacyMode,
           localModelId: selectedLocalModelId || undefined,
+          abortSignal: stopController.signal,
         }
       );
 
@@ -704,6 +709,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       ]);
     } finally {
       setIsLoading(false);
+      if (activeRequestAbortRef.current === stopController) activeRequestAbortRef.current = null;
     }
   };
 
@@ -2199,6 +2205,15 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
             </div>
             <span>Analyzing problem and synthesizing mathematical proof...</span>
+            <button
+              id="btn-ai-stop"
+              type="button"
+              onClick={() => { activeRequestAbortRef.current?.abort(); }}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 hover:border-rose-500/60 transition-all active:scale-95"
+              title="Stop waiting: aborts the request. No AI response will be applied."
+            >
+              Stop
+            </button>
           </div>
         )}
 
