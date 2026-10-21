@@ -3,6 +3,7 @@ import {
   calculateExpression,
   formatEngineeringNotation,
 } from '../src/engine/mathEngine';
+import { solveEquation } from '../src/engine/equationSolver';
 import { toolCalculate } from '../src/engine/toolLayer';
 
 function expectValue(expression: string, expected: number, angleMode: 'DEG' | 'RAD' | 'GRAD' = 'DEG') {
@@ -101,6 +102,35 @@ const precedenceCases: Array<[string, number]> = [
 for (const [expression, expected] of precedenceCases) {
   const calculation = calculateExpression(expression);
   assert.equal(calculation.value, expected, `${expression} should equal ${expected}`);
+}
+
+// --- Equation solver: never invent a solution from a mis-parsed term ------------
+// parseFloat silently truncates at the first non-numeric character, so '1/x' was
+// read as the constant 1 and '2(x+1)' as 2. That turned genuinely unsupported
+// equations into a confident "No solution". Such terms must now be rejected
+// explicitly rather than absorbed as constants.
+for (const expression of ['1/x = 2', '2/x = 4', '1/x+1 = 3', '2(x+1) = 4']) {
+  const solution = solveEquation(expression);
+  const claimedRoots = solution.isValid ? solution.solutions.length : 0;
+  assert.equal(claimedRoots, 0, `${expression} must not produce a confident solution`);
+}
+
+// Genuinely supported equations must keep solving, including a mis-parse guard that
+// must not reject ordinary decimals or signed coefficients.
+const solvedCases: Array<[string, number[]]> = [
+  ['2x + 5 = 15', [5]],
+  ['x^2 + 5x + 6 = 0', [-2, -3]],
+  ['3x = 12', [4]],
+  ['2.5x = 5', [2]],
+  ['-2x + 4 = 0', [2]],
+  ['x^2 = 9', [3, -3]],
+];
+for (const [expression, expected] of solvedCases) {
+  const solution = solveEquation(expression);
+  assert.equal(solution.isValid, true, `${expression} should be solvable`);
+  const got = solution.solutions.map(Number).sort((a, b) => a - b);
+  const want = [...expected].sort((a, b) => a - b);
+  assert.deepEqual(got, want, `${expression} => [${got}] expected [${want}]`);
 }
 
 console.log('Math engine regression tests passed');
