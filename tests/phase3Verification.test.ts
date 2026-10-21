@@ -14,6 +14,7 @@ import {
   DocumentIntelligenceService,
   detectDocumentFormat,
   formatCitation,
+  chunkTextWithLines,
 } from '../src/services/documentIntelligence';
 import {
   IntelligenceSyncService,
@@ -111,6 +112,66 @@ async function testPhase3A_DocumentIntelligence() {
   const removed = syncService.removeDocument(syncDoc.id);
   assert.equal(removed, true);
   assert.equal(syncService.getDocument(syncDoc.id), undefined);
+
+  // 7. Chunk overlap: consecutive chunks must share trailing context so a fact that
+  //    straddles a boundary is still retrievable from the following chunk.
+  const overlapLines: string[] = [];
+  for (let i = 1; i <= 12; i++) overlapLines.push(`line ${i} content which is reasonably long`);
+  const overlapText = overlapLines.join('\n');
+  const chunks = chunkTextWithLines('doc-overlap', 'overlap.txt', overlapText, {
+    chunkSizeChars: 80,
+    chunkOverlapChars: 40,
+  });
+  assert.ok(chunks.length >= 2, 'expected multiple chunks for the overlap fixture');
+
+  // Forward progress: every chunk carries real text and the start line advances.
+  let overlappingBoundaries = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    assert.ok(chunks[i].text.length > 0, 'chunks must not be empty');
+    assert.ok(chunks[i].location.lineNumberStart <= chunks[i].location.lineNumberEnd, 'line range must be ordered');
+    if (i > 0) {
+      assert.ok(
+        chunks[i].location.lineNumberStart > chunks[i - 1].location.lineNumberStart,
+        'chunk start must make forward progress',
+      );
+      if (chunks[i].location.lineNumberStart <= chunks[i - 1].location.lineNumberEnd) {
+        overlappingBoundaries++;
+      }
+    }
+  }
+  // Overlap is best-effort (a trailing line that exceeds the overlap budget is not
+  // carried), but with a 40-char budget over ~39-char lines most boundaries must
+  // genuinely overlap -- otherwise the feature is silently doing nothing.
+  assert.ok(
+    overlappingBoundaries >= Math.floor((chunks.length - 1) / 2),
+    `expected overlap at most boundaries, saw ${overlappingBoundaries} of ${chunks.length - 1}`,
+  );
+
+  // The final chunk must not duplicate the whole previous chunk (no runaway loop).
+  const last = chunks[chunks.length - 1];
+  const prev = chunks[chunks.length - 2];
+  assert.ok(last.text.length < prev.text.length * 2, 'final chunk must not duplicate its predecessor');
+
+  // Overlap can be disabled, restoring the exact previous behaviour.
+  const noOverlap = chunkTextWithLines('doc-no-overlap', 'overlap.txt', overlapText, {
+    chunkSizeChars: 80,
+    chunkOverlapChars: 0,
+  });
+  for (let i = 1; i < noOverlap.length; i++) {
+    assert.equal(
+      noOverlap[i].location.lineNumberStart,
+      noOverlap[i - 1].location.lineNumberEnd + 1,
+      'with overlap disabled, chunks must be contiguous and non-overlapping',
+    );
+  }
+
+  // A single line longer than the chunk size must still terminate and produce one chunk.
+  const longLine = 'x'.repeat(500);
+  const longLineChunks = chunkTextWithLines('doc-long', 'long.txt', longLine, {
+    chunkSizeChars: 50,
+    chunkOverlapChars: 25,
+  });
+  assert.equal(longLineChunks.length, 1, 'a single over-long line yields exactly one chunk');
 
   console.log('  PASS  Phase 3A Document Intelligence & IntelligenceSync tests passed.');
 }

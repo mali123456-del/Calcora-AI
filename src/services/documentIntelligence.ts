@@ -200,6 +200,11 @@ export function chunkTextWithLines(
   options: { chunkSizeChars?: number; chunkOverlapChars?: number; pageNumber?: number } = {},
 ): DocumentChunk[] {
   const chunkSize = options.chunkSizeChars || DEFAULT_CHUNK_SIZE_CHARS;
+  // Overlap is applied on whole trailing lines so a sentence that straddles a
+  // chunk boundary still appears intact in the following chunk. It is clamped to
+  // strictly less than the chunk size to guarantee forward progress and end.
+  const requestedOverlap = options.chunkOverlapChars ?? DEFAULT_CHUNK_OVERLAP_CHARS;
+  const chunkOverlap = Math.max(0, Math.min(Math.floor(requestedOverlap), Math.max(0, chunkSize - 1)));
   const lines = fullText.split(/\r?\n/);
   const chunks: DocumentChunk[] = [];
 
@@ -242,9 +247,30 @@ export function chunkTextWithLines(
         });
       }
 
-      currentLines = [];
-      currentChars = 0;
-      currentStartLine = lineNum + 1;
+      // Seed the next chunk with the trailing lines that fit inside the overlap
+      // budget. Only do this when more input remains, so the final chunk is not
+      // duplicated.
+      const isLastLine = i === lines.length - 1;
+      if (!isLastLine && chunkOverlap > 0) {
+        const carry: string[] = [];
+        let carryChars = 0;
+        for (let j = currentLines.length - 1; j >= 0; j--) {
+          const candidate = currentLines[j];
+          const candidateChars = candidate.length + 1;
+          // Never let the carried overlap equal or exceed the whole chunk (it
+          // must leave room for at least the next line).
+          if (carryChars + candidateChars > chunkOverlap) break;
+          carry.unshift(candidate);
+          carryChars += candidateChars;
+        }
+        currentLines = carry;
+        currentChars = carryChars;
+        currentStartLine = lineNum + 1 - carry.length;
+      } else {
+        currentLines = [];
+        currentChars = 0;
+        currentStartLine = lineNum + 1;
+      }
     }
   }
 
