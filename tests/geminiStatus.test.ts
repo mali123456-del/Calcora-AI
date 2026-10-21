@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import {
   classifyGeminiError,
   getGeminiCredentialState,
+  GEMINI_CANDIDATE_MODELS,
+  GEMINI_DEFAULT_MODEL,
 } from '../src/services/geminiStatus';
 
 assert.equal(getGeminiCredentialState(undefined).state, 'GEMINI_NOT_CONFIGURED');
@@ -27,4 +29,21 @@ const classified = classifyGeminiError({ status: 503, message: 'secret API key s
 assert.equal(classified.userMessage.includes('secret'), false);
 assert.equal(classified.userMessage.includes('API key'), false);
 
-console.log('Gemini status classification tests passed');
+// --- Gemini model id integrity -------------------------------------------------
+// Regression guard for the bug where the server named the non-existent model
+// `gemini-3.8-flash`, which the SDK rejects with GEMINI_MODEL_UNAVAILABLE. Only
+// real, currently-available ids may appear in the canonical list.
+assert.ok(GEMINI_CANDIDATE_MODELS.length > 0, 'candidate model list must not be empty');
+assert.equal(
+  new Set(GEMINI_CANDIDATE_MODELS).size,
+  GEMINI_CANDIDATE_MODELS.length,
+  'candidate model ids must be unique',
+);
+for (const model of GEMINI_CANDIDATE_MODELS) {
+  assert.match(model, /^gemini-[a-z0-9][a-z0-9.-]*$/, `unexpected model id shape: ${model}`);
+  assert.equal(/\d+\.\d+\.\d+/.test(model), false, `model id must not embed a fabricated semantic version: ${model}`);
+}
+assert.equal(GEMINI_DEFAULT_MODEL, GEMINI_CANDIDATE_MODELS[0]);
+assert.equal(GEMINI_CANDIDATE_MODELS.includes('gemini-2.5-flash' as never), true);
+
+console.log('Gemini model id integrity tests passed');

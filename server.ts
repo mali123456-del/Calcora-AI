@@ -18,7 +18,7 @@ import { createDocumentContext, type DocumentContext, MAX_DOCUMENT_CONTEXT_CHARS
 import { MAX_PDF_PAGES } from './src/services/pdfExtraction';
 import { getAIIntelligenceStatus, runAIIntelligenceCycle, startAIIntelligenceScheduler, getActiveAIIntelligenceContext, searchAIIntelligence } from './src/services/aiIntelligence';
 import { isLearningEvaluationAuthorized, runTutorLearningEvaluation } from './src/services/tutorLearningEngine';
-import { classifyGeminiError, getGeminiCredentialState } from './src/services/geminiStatus';
+import { classifyGeminiError, getGeminiCredentialState, GEMINI_CANDIDATE_MODELS } from './src/services/geminiStatus';
 import { parseGeminiJsonResponse } from './src/services/geminiRuntime';
 import { getServerHost, getServerPort, resolveGeminiApiKey } from './electron/runtimeConfig';
 import { isAuthorizationTokenValid } from './src/services/requestSecurity';
@@ -876,11 +876,31 @@ Return clean JSON:
       const fullPrompt = historyContext ? `${historyContext}\nUser: ${cleanPrompt}` : cleanPrompt;
       const startedAt = Date.now();
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: fullPrompt,
-        config: { systemInstruction, responseMimeType: 'application/json' },
-      });
+      // Candidate models in preference order, sourced from the single canonical
+      // list (see geminiStatus.ts). Only real, current Gemini model identifiers
+      // belong there; the SDK validates them server-side, so an unknown id would
+      // surface as GEMINI_MODEL_UNAVAILABLE.
+      const candidateModels = [...GEMINI_CANDIDATE_MODELS];
+      let response: Awaited<ReturnType<typeof ai.models.generateContent>> | null = null;
+      let modelUsed = candidateModels[0];
+      let lastModelError: unknown = null;
+      for (const candidate of candidateModels) {
+        try {
+          response = await ai.models.generateContent({
+            model: candidate,
+            contents: fullPrompt,
+            config: { systemInstruction, responseMimeType: 'application/json' },
+          });
+          modelUsed = candidate;
+          lastModelError = null;
+          break;
+        } catch (modelError: unknown) {
+          lastModelError = modelError;
+        }
+      }
+      if (!response) {
+        throw lastModelError instanceof Error ? lastModelError : new Error('All candidate Gemini models failed');
+      }
 
       const text = response.text?.trim() || '';
       const parsed = parseGeminiJsonResponse(text);
@@ -909,7 +929,7 @@ Return clean JSON:
               geminiFallback: true,
               requiresCloudApiKey: false,
               latencyMs: Date.now() - startedAt,
-              model: 'gemini-3.8-flash',
+              model: modelUsed,
             },
           });
         }
@@ -963,7 +983,7 @@ Return clean JSON:
           grounded: safeGroundedConcepts.length > 0 || Boolean(safeGroundingContext),
           deterministicVerified,
           latencyMs: Date.now() - startedAt,
-          model: 'gemini-3.8-flash',
+          model: modelUsed,
         },
       });
     } catch (error: unknown) {

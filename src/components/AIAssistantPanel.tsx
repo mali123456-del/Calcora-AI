@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { AIMessage } from '../types';
+import { GEMINI_DEFAULT_MODEL } from '../services/geminiStatus';
 import { retrieveMathematicsKnowledge } from '../knowledge/mathematics/retrieval';
 import { mathematicsKnowledgeIndex, MATHEMATICS_KNOWLEDGE_VERSION, MATH_TUTOR_TRAINING_CORPUS, knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from '../knowledge/mathematics';
 import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
@@ -652,7 +653,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               conversation_id: tutorConversationIdRef.current,
               role: 'assistant',
               content: response.answer,
-              model: 'gemini-3.8-flash',
+              model: GEMINI_DEFAULT_MODEL,
               provider: 'gemini',
               status: 'complete',
             });
