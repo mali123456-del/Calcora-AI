@@ -127,12 +127,30 @@ export function toolSolveEquation(args: Record<string, unknown>): MathToolResult
   } catch (e) { return fail('solveEquation', String(args.equation ?? ''), e instanceof Error ? e.message : 'Equation solving failed'); }
 }
 
-export async function toolRetrieveKnowledge(args: Record<string, unknown>): Promise<MathToolResult> {
+/**
+ * Supabase credentials for knowledge retrieval.
+ *
+ * This module is reachable from the client bundle (via `independentVerifier`), so
+ * it must never name a service-role secret. Callers that run on the server and need
+ * elevated access inject the service-role key through this parameter; the browser
+ * has no way to supply one and falls back to the RLS-protected publishable key.
+ */
+export interface KnowledgeRetrievalCredentials {
+  url?: string;
+  key?: string;
+}
+
+export async function toolRetrieveKnowledge(
+  args: Record<string, unknown>,
+  credentials: KnowledgeRetrievalCredentials = {},
+): Promise<MathToolResult> {
   try {
     const query = str(args.query, 'query');
     const limit = Math.min(Math.max(typeof args.limit === 'number' ? Math.floor(args.limit) : 8, 1), 20);
-    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    // Only public, Vite-injected values are read here. RLS on the Supabase side is
+    // what enforces tenant isolation for this browser-reachable read path.
+    const url = credentials.url || process.env.VITE_SUPABASE_URL;
+    const key = credentials.key || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     if (!url || !key) return fail('retrieveKnowledge', query, 'Supabase knowledge retrieval is not configured');
     const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data, error } = await supabase.rpc('search_math_knowledge_text', { search_query: query, result_limit: limit });
@@ -290,7 +308,11 @@ export function toolUnitConversion(args: Record<string, unknown>): MathToolResul
   } catch (e) { return fail('unitConversion', '', e instanceof Error ? e.message : 'Unit conversion failed'); }
 }
 
-export async function executeMathTool(name: MathToolName, args: Record<string, unknown>): Promise<MathToolResult> {
+export async function executeMathTool(
+  name: MathToolName,
+  args: Record<string, unknown>,
+  credentials: KnowledgeRetrievalCredentials = {},
+): Promise<MathToolResult> {
   switch (name) {
     case 'calculate': return toolCalculate(args);
     case 'solveEquation': return toolSolveEquation(args);
@@ -299,7 +321,7 @@ export async function executeMathTool(name: MathToolName, args: Record<string, u
     case 'statistics': return toolStatistics(args);
     case 'matrix': return toolMatrix(args);
     case 'unitConversion': return toolUnitConversion(args);
-    case 'retrieveKnowledge': return toolRetrieveKnowledge(args);
+    case 'retrieveKnowledge': return toolRetrieveKnowledge(args, credentials);
     case 'solveSystem': {
       const equations = args.equations;
       if (!Array.isArray(equations) || equations.length !== 2 || !equations.every(v => typeof v === 'string')) return fail(name, '', 'Provide exactly two linear equations');

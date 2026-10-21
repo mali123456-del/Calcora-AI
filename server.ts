@@ -11,7 +11,7 @@ import { buildMultilingualTutorKnowledge, detectLanguageFromText } from './src/s
 import { analyzeTutorInput, buildInputUnderstandingInstruction } from './src/services/multilingualTutorInput';
 import { buildKnowledgeSourceInstruction } from './src/services/multilingualKnowledgeSources';
 import { buildMultilingualResponseQualityInstruction } from './src/services/multilingualResponseQuality';
-import { executeMathTool, type MathToolName } from './src/engine/toolLayer';
+import { executeMathTool, type MathToolName, type KnowledgeRetrievalCredentials } from './src/engine/toolLayer';
 import { orchestrateTutor } from './src/ai/tutorOrchestrator';
 import { orchestrateTutor as orchestrateLocalTutor, type TutorOrchestrationResult as LocalTutorResult } from './src/services/tutorOrchestrator';
 import { createDocumentContext, type DocumentContext, MAX_DOCUMENT_CONTEXT_CHARS } from './src/services/documentContext';
@@ -166,6 +166,20 @@ function buildDocumentContextFromRequest(
   });
 }
 
+/**
+ * Server-side Supabase credentials for privileged knowledge retrieval.
+ *
+ * The math tool layer is bundled into the browser client, so it deliberately reads
+ * no secrets. The server injects the service-role key here; that reference lives
+ * only in this server entry point, which is never part of the client bundle.
+ */
+function serverKnowledgeCredentials(): KnowledgeRetrievalCredentials {
+  return {
+    url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  };
+}
+
 export async function startServer(): Promise<Server> {
   const app = express();
   const PORT = getServerPort();
@@ -264,7 +278,7 @@ export async function startServer(): Promise<Server> {
       if (!args || typeof args !== 'object' || Array.isArray(args)) {
         return res.status(400).json({ success:false, error:'Tool arguments must be an object' });
       }
-      return res.json(await executeMathTool(tool as MathToolName, args as Record<string, unknown>));
+      return res.json(await executeMathTool(tool as MathToolName, args as Record<string, unknown>, serverKnowledgeCredentials()));
     } catch (error) {
       console.error('Math tool endpoint error:', error);
       return res.status(400).json({ success:false, error:'Invalid math tool request' });
@@ -792,7 +806,7 @@ export async function startServer(): Promise<Server> {
         : `STANDARD ASSISTANT MODE ACTIVE: Provide direct, concise answers with step-by-step proofs and LaTeX formulas.`;
 
       const knowledgeQuery = prompt.slice(0, 500);
-      const knowledgeResult = await executeMathTool('retrieveKnowledge', { query: knowledgeQuery, limit: 6 });
+      const knowledgeResult = await executeMathTool('retrieveKnowledge', { query: knowledgeQuery, limit: 6 }, serverKnowledgeCredentials());
       const retrievedKnowledge = knowledgeResult.success ? knowledgeResult.metadata?.matches : [];
       const authoritativeDeterministicContext = deterministicContext.slice(0, 8000);
       const safeRetrievedKnowledge = JSON.stringify(retrievedKnowledge ?? []).slice(0, 12000);
