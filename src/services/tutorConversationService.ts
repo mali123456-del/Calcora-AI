@@ -1,5 +1,6 @@
 import type { AIMessage } from '../types';
 import type { DifficultyLevel, MathTopic, TutorMode } from '../utils/aiTutor';
+import { getActiveWorkspaceId } from '../engine/workspaceEngine';
 
 export type TutorLearningLevel = DifficultyLevel;
 
@@ -35,8 +36,25 @@ export interface TutorConversationState {
   updatedAt: number;
 }
 
-const STORAGE_KEY = 'calcora_tutor_conversation_state_v2';
+/**
+ * Storage layout.
+ *
+ * Version 2 kept one conversation per origin, so tutor transcripts and learning
+ * state leaked across workspaces on the same machine. Version 3 stores one
+ * conversation bucket per workspace id, so each workspace keeps its own session.
+ * The legacy v2 value is migrated into the active workspace's bucket on first
+ * read and then removed, so no user data is lost.
+ */
+const LEGACY_STORAGE_KEY = 'calcora_tutor_conversation_state_v2';
+const STORAGE_KEY = 'calcora_tutor_conversation_state_v3';
 const MAX_MESSAGES = 200;
+/** Bound the store so many workspaces cannot grow localStorage without limit. */
+const MAX_WORKSPACE_BUCKETS = 25;
+
+interface WorkspaceConversationStore {
+  version: 3;
+  conversations: Record<string, TutorConversationState>;
+}
 
 function storage(): Storage | null {
   try {
@@ -46,9 +64,72 @@ function storage(): Storage | null {
   }
 }
 
+function isConversationState(value: unknown): value is TutorConversationState {
+  const v = value as Partial<TutorConversationState> | null;
+  return Boolean(v && typeof v === 'object' && typeof v.id === 'string' && Array.isArray(v.messages) && typeof v.learning === 'object' && v.learning !== null);
+}
+
+function readWorkspaceStore(): WorkspaceConversationStore {
+  const raw = storage()?.getItem(STORAGE_KEY);
+  if (!raw) return { version: 3, conversations: {} };
+  try {
+    const parsed = JSON.parse(raw) as Partial<WorkspaceConversationStore>;
+    if (parsed?.version !== 3 || !parsed.conversations || typeof parsed.conversations !== 'object') {
+      return { version: 3, conversations: {} };
+    }
+    const conversations: Record<string, TutorConversationState> = {};
+    for (const [workspaceId, state] of Object.entries(parsed.conversations)) {
+      // Corrupt or hand-edited buckets are dropped, never fatal (Phase L).
+      if (typeof workspaceId === 'string' && isConversationState(state)) {
+        conversations[workspaceId] = state;
+      }
+    }
+    return { version: 3, conversations };
+  } catch {
+    return { version: 3, conversations: {} };
+  }
+}
+
+function writeWorkspaceStore(store: WorkspaceConversationStore): void {
+  const s = storage();
+  if (!s) return;
+  try {
+    // Evict the least recently updated buckets beyond the bound.
+    const entries = Object.entries(store.conversations)
+      .sort((a, b) => (b[1].updatedAt ?? 0) - (a[1].updatedAt ?? 0));
+    const bounded = Object.fromEntries(entries.slice(0, MAX_WORKSPACE_BUCKETS));
+    s.setItem(STORAGE_KEY, JSON.stringify({ version: 3, conversations: bounded } satisfies WorkspaceConversationStore));
+  } catch {}
+}
+
+/**
+ * Migrates any legacy v2 conversation into the active workspace's bucket. Called
+ * on load so nothing a user wrote before this change is silently dropped.
+ */
+function migrateLegacyConversation(store: WorkspaceConversationStore, workspaceId: string): void {
+  const raw = storage()?.getItem(LEGACY_STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw) as TutorConversationState;
+    if (isConversationState(parsed) && !store.conversations[workspaceId]) {
+      store.conversations[workspaceId] = parsed;
+      writeWorkspaceStore(store);
+    }
+    // Remove the legacy value only after a successful store write; on storage
+    // failure the legacy data stays and migration retries next load.
+    if (storage()?.getItem(STORAGE_KEY)) storage()?.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // Legacy value is unreadable; leave it in place and continue fresh.
+    try { storage()?.removeItem(LEGACY_STORAGE_KEY); } catch {}
+  }
+}
+
 function persist(state: TutorConversationState): TutorConversationState {
   const value = { ...state, updatedAt: Date.now() };
-  try { storage()?.setItem(STORAGE_KEY, JSON.stringify(value)); } catch {}
+  const workspaceId = getActiveWorkspaceId();
+  const store = readWorkspaceStore();
+  store.conversations[workspaceId] = value;
+  writeWorkspaceStore(store);
   return value;
 }
 
@@ -79,11 +160,14 @@ export function createTutorConversationState(id = `tutor-${Date.now()}`, title =
 
 export function loadTutorConversationState(): TutorConversationState {
   try {
-    const raw = storage()?.getItem(STORAGE_KEY);
-    if (!raw) return createTutorConversationState();
-    const parsed = JSON.parse(raw) as TutorConversationState;
-    if (!parsed?.id || !Array.isArray(parsed.messages) || !parsed.learning) return createTutorConversationState();
-    return parsed;
+    const workspaceId = getActiveWorkspaceId();
+    const store = readWorkspaceStore();
+    const bucket = store.conversations[workspaceId];
+    if (bucket && isConversationState(bucket)) return bucket;
+    migrateLegacyConversation(store, workspaceId);
+    const migrated = readWorkspaceStore().conversations[workspaceId];
+    if (migrated && isConversationState(migrated)) return migrated;
+    return createTutorConversationState();
   } catch {
     return createTutorConversationState();
   }
