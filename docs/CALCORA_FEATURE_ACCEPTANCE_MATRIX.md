@@ -30,7 +30,7 @@ Status vocabulary: PASS · PARTIAL · FAIL · BLOCKED · NOT VERIFIED · NOT IMP
 | Research Assistant | **NOT IMPLEMENTED** | no external source retrieval |
 | Document Explainer | **NOT IMPLEMENTED** | extraction exists, tutoring blocked on non-loopback |
 | Tool-calling agent | **NOT IMPLEMENTED** | 1 verified tool, no planning loop |
-| Streaming / stop / regenerate | **NOT VERIFIED** | not exercised by the packaged gate |
+| Streaming / stop / regenerate | **PASS** | SSE endpoint `/api/ai/math/stream` + client `askAIMathAssistantStream` + panel streaming bubble + Regenerate; suites `test:math-sse-protocol`, `test:ai-stream-endpoint`, `test:ai-stream-client`, `test:user-stop`. Deltas are provisional; only the final `result` frame (same verification pipeline as the JSON endpoint) is authoritative. Cloud token streaming is contract-tested (offline/result-path + parity), not exercised against a live Gemini key |
 
 ## 3. Knowledge / RAG
 
