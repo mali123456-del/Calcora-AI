@@ -4,8 +4,9 @@
  * - Permutations: nPr = n! / (n - r)!
  * - Combinations: nCr = n! / (r! (n - r)!)
  * - Binomial Distribution: P(X = k) = C(n, k) * p^k * (1 - p)^(n - k)
- * - Poisson Distribution: P(X = k) = (λ^k * e^(-λ)) / k!
  * - Discrete Random Variable: Expected Value E[X] & Variance Var(X)
+ *
+ * Poisson distribution is NOT implemented here; do not claim support for it.
  */
 
 import { sanitizeNumber } from './mathEngine';
