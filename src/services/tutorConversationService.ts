@@ -197,6 +197,31 @@ export function appendTutorMessage(
   return persist({ ...state, messages, problemContext: nextContext });
 }
 
+/**
+ * Removes the trailing exchange (from the last user message onward, including
+ * the assistant reply) so a regenerated answer replaces the previous one
+ * instead of duplicating it in the persisted Tutor conversation. Returns the
+ * truncated, persisted state; a state with no answerable exchange is unchanged.
+ */
+export function truncateLastTutorExchange(state: TutorConversationState): TutorConversationState {
+  const messages = state.messages;
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  // Nothing to truncate without a user question, or when the user message is
+  // itself the last entry (a question still awaiting its first answer).
+  if (lastUserIdx === -1 || lastUserIdx === messages.length - 1) return state;
+  const nextMessages = messages.slice(0, lastUserIdx);
+  const nextContext = state.problemContext
+    ? { ...state.problemContext, messageCount: nextMessages.length, updatedAt: Date.now() }
+    : state.problemContext;
+  return persist({ ...state, messages: nextMessages, problemContext: nextContext });
+}
+
 export function updateTutorProblemContext(
   state: TutorConversationState,
   update: Partial<Omit<TutorProblemContext, 'messageCount' | 'updatedAt'>>,

@@ -11,6 +11,7 @@ import { generateCalculationExplanation } from '../engine/stepExplainer';
 import { checkUserStep } from '../utils/aiTutor';
 import { detectMathAudience, type MathAudienceProfile } from '../knowledge/mathematics/audienceProfiles';
 import { getOfflinePolicy, type PrivacyMode } from './offlinePolicy';
+import { parseSseFrames } from './mathSseProtocol';
 import { detectLanguageFromText } from '../services/multilingualTutorKnowledge';
 import { activeDocumentToContext } from '../services/activeDocument';
 import { selectRelevantChunks, toPagePayload } from '../services/documentContext';
@@ -160,6 +161,99 @@ function isTimeoutError(error: unknown): boolean {
   );
 }
 
+/** Resolved request context shared by the JSON and SSE transports of the Tutor API. */
+interface AiMathRequestContext {
+  prompt: string;
+  conversation: AIMessage[];
+  currentExpression?: string;
+  currentResult?: string;
+  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint';
+  tutorOptions: TutoringRequestOptions;
+  audienceProfile: MathAudienceProfile;
+  language: string;
+  responseProfile: string;
+  offlineOnly: boolean;
+  documentContext: ReturnType<typeof activeDocumentToContext>;
+  deterministicVerification: ReturnType<typeof verifyWithDeterministicEngine> | undefined;
+}
+
+/** Identical request body for /api/ai/math and /api/ai/math/stream. */
+function buildAiMathRequestBody(ctx: AiMathRequestContext): string {
+  const boundedConversation = Array.isArray(ctx.conversation)
+    ? ctx.conversation.slice(-6).map((message) => ({
+        role: message.role === 'user' ? 'user' : 'assistant',
+        content: String(message.content ?? '').slice(-3000),
+      }))
+    : [];
+  return JSON.stringify({
+    prompt: ctx.prompt,
+    conversation: boundedConversation,
+    currentExpression: ctx.currentExpression,
+    currentResult: ctx.currentResult,
+    mode: ctx.mode,
+    tutorMode: ctx.tutorOptions.tutorMode || 'assistant',
+    learningObjective: ctx.tutorOptions.learningObjective || 'concept',
+    difficulty: ctx.tutorOptions.difficulty || 'intermediate',
+    topic: ctx.tutorOptions.topic || 'Algebra',
+    hintLevel: ctx.tutorOptions.hintLevel || 1,
+    socraticMode: ctx.tutorOptions.socraticMode || false,
+    userStep: ctx.tutorOptions.userStep,
+    groundingContext: ctx.tutorOptions.groundingContext,
+    groundedConcepts: ctx.tutorOptions.groundedConcepts,
+    audienceProfile: ctx.audienceProfile,
+    deterministicVerification: ctx.deterministicVerification,
+    language: ctx.language,
+    responseProfile: ctx.responseProfile,
+    offlineOnly: ctx.offlineOnly,
+    localModelId: ctx.offlineOnly && !ctx.documentContext && typeof ctx.tutorOptions.localModelId === 'string' && /^gguf-[a-f0-9]{16}$/.test(ctx.tutorOptions.localModelId) ? ctx.tutorOptions.localModelId : undefined,
+    document: ctx.documentContext ? { fileName: ctx.documentContext.fileName, pageCount: ctx.documentContext.pageCount, selectedPageCount: ctx.documentContext.pages.length, hasText: ctx.documentContext.hasText, needsOcr: ctx.documentContext.needsOcr, pages: toPagePayload(ctx.documentContext, selectRelevantChunks(ctx.documentContext, ctx.prompt)) } : null,
+  });
+}
+
+/** One mapping is authoritative for both transports: verification state wins. */
+function mapServerPayloadToAIResponse(data: Record<string, unknown>, tutorMode?: string): AIResponse {
+  const concealsFinal = ['socratic', 'hint', 'quiz', 'challenge', 'exam'].includes(String(tutorMode ?? ''));
+  const rawExpr = typeof data.expression === 'string' && data.expression ? data.expression : null;
+  const serverVerification = normalizeServerVerification(data.verification) ?? undefined;
+  const reportedResult = typeof data.deterministicResult === 'string' ? data.deterministicResult : undefined;
+  const legacyVerification = rawExpr && reportedResult
+    ? rawExpr.includes('=')
+      ? verifyEquation(rawExpr, reportedResult.split(',').map((root: string) => root.trim()).filter(Boolean))
+      : verifyCalculation(rawExpr, reportedResult)
+    : undefined;
+  const verification = serverVerification
+    ?? legacyVerification
+    ?? unverified('The server response did not include a checkable deterministic result.');
+  const serverVerified = Boolean(reportedResult) && verification.state === 'VERIFIED';
+  const verifiedResult = serverVerified ? reportedResult : undefined;
+  const answer = serverVerified && !concealsFinal
+    ? `${verifiedResult}${typeof data.answer === 'string' && data.answer ? `\n\n${data.answer}` : ''}`
+    : (typeof data.answer === 'string' && data.answer ? data.answer : 'Response received');
+  const meta = data.meta as { responseSource?: unknown } | undefined;
+  const groundedSource = meta?.responseSource === 'document-grounded' || meta?.responseSource === 'document-insufficient-evidence'
+    ? (meta.responseSource as AIResponse['responseSource'])
+    : undefined;
+  const responseSource = groundedSource
+    ?? (meta?.responseSource === 'local-model' ? 'local-model' as const : undefined)
+    ?? (data.geminiState === 'GEMINI_CONFIGURED' ? 'gemini' as const : data.isOfflineFallback ? 'local-deterministic' as const : undefined);
+  const serverVerifiedSteps = serverVerified && Array.isArray(data.deterministicSteps) && (data.deterministicSteps as unknown[]).length
+    ? (data.deterministicSteps as string[]).concat(Array.isArray(data.steps) ? (data.steps as string[]) : [])
+    : Array.isArray(data.steps) ? (data.steps as string[]) : [];
+  return {
+    answer,
+    expression: rawExpr,
+    steps: serverVerifiedSteps,
+    formula: (data.formula || null) as string | null,
+    isVerified: verification.state === 'VERIFIED',
+    verificationNote: verification.reason,
+    verification,
+    verifiedResult,
+    isOfflineFallback: Boolean(data.isOfflineFallback),
+    responseSource,
+    providerMessage: typeof data.providerMessage === 'string' ? data.providerMessage : undefined,
+  };
+}
+
 export async function askAIMathAssistant(prompt: string, conversation: AIMessage[] = [], currentExpression?: string, currentResult?: string, mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain', tutorOptions: TutoringRequestOptions = {}): Promise<AIResponse> {
   const audienceProfile = tutorOptions.audienceProfile || detectMathAudience(prompt);
   const language = tutorOptions.language || detectLanguageFromText(prompt);
@@ -191,12 +285,20 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
       providerMessage: 'Local-only requests are enforced; no cloud provider was contacted.',
     };
   }
-  const boundedConversation = Array.isArray(conversation)
-    ? conversation.slice(-6).map((message) => ({
-        role: message.role === 'user' ? 'user' : 'assistant',
-        content: String(message.content ?? '').slice(-3000),
-      }))
-    : [];
+  const requestContext: AiMathRequestContext = {
+    prompt,
+    conversation,
+    currentExpression,
+    currentResult,
+    mode,
+    tutorOptions,
+    audienceProfile,
+    language,
+    responseProfile,
+    offlineOnly,
+    documentContext,
+    deterministicVerification,
+  };
 
   const requestTimeoutMs =
     typeof tutorOptions.requestTimeoutMs === 'number' && tutorOptions.requestTimeoutMs > 0
@@ -216,36 +318,13 @@ export async function askAIMathAssistant(prompt: string, conversation: AIMessage
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: abortController.signal,
-body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpression, currentResult, mode, tutorMode: tutorOptions.tutorMode || 'assistant', learningObjective: tutorOptions.learningObjective || 'concept', difficulty: tutorOptions.difficulty || 'intermediate', topic: tutorOptions.topic || 'Algebra', hintLevel: tutorOptions.hintLevel || 1, socraticMode: tutorOptions.socraticMode || false, userStep: tutorOptions.userStep, groundingContext: tutorOptions.groundingContext, groundedConcepts: tutorOptions.groundedConcepts, audienceProfile, deterministicVerification, language, responseProfile, offlineOnly, localModelId: offlineOnly && !documentContext && typeof tutorOptions.localModelId === 'string' && /^gguf-[a-f0-9]{16}$/.test(tutorOptions.localModelId) ? tutorOptions.localModelId : undefined, document: documentContext ? { fileName: documentContext.fileName, pageCount: documentContext.pageCount, selectedPageCount: documentContext.pages.length, hasText: documentContext.hasText, needsOcr: documentContext.needsOcr, pages: toPagePayload(documentContext, selectRelevantChunks(documentContext, prompt)) } : null }),
+        body: buildAiMathRequestBody(requestContext),
       });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Server responded with HTTP ${res.status}`);
     const data = await res.json();
-    const rawExpr = data.expression || null;
-    const serverVerification = normalizeServerVerification(data.verification) ?? undefined;
-    const reportedResult = typeof data.deterministicResult === 'string' ? data.deterministicResult : undefined;
-    const legacyVerification = rawExpr && reportedResult
-      ? rawExpr.includes('=')
-        ? verifyEquation(rawExpr, reportedResult.split(',').map((root: string) => root.trim()).filter(Boolean))
-        : verifyCalculation(rawExpr, reportedResult)
-      : undefined;
-    const verification = serverVerification
-      ?? legacyVerification
-      ?? unverified('The server response did not include a checkable deterministic result.');
-    const serverVerified = Boolean(reportedResult) && verification.state === 'VERIFIED';
-    const verifiedResult = serverVerified ? reportedResult : undefined;
-    const concealsFinal = ['socratic', 'hint', 'quiz', 'challenge', 'exam'].includes(String(tutorOptions.tutorMode));
-    const answer = serverVerified && !concealsFinal
-      ? `${verifiedResult}${data.answer ? `\\n\\n${data.answer}` : ''}`
-      : (data.answer || 'Response received');
-    const groundedSource = data.meta?.responseSource === 'document-grounded' || data.meta?.responseSource === 'document-insufficient-evidence'
-      ? data.meta.responseSource
-      : undefined;
-    const responseSource = groundedSource
-      ?? (data.meta?.responseSource === 'local-model' ? 'local-model' : undefined)
-      ?? (data.geminiState === 'GEMINI_CONFIGURED' ? 'gemini' : data.isOfflineFallback ? 'local-deterministic' : undefined);
     // The server's canonical outcome wins over its legacy boolean and any client-side
     // handshake. A result may be surfaced as verified only when that outcome is VERIFIED.
-    return { answer, expression: rawExpr, steps: serverVerified && Array.isArray(data.deterministicSteps) && data.deterministicSteps.length ? data.deterministicSteps.concat(data.steps || []) : (data.steps || []), formula: data.formula || null, isVerified: verification.state === 'VERIFIED', verificationNote: verification.reason, verification, verifiedResult, isOfflineFallback: Boolean(data.isOfflineFallback), responseSource, providerMessage: typeof data.providerMessage === 'string' ? data.providerMessage : undefined };
+    return mapServerPayloadToAIResponse(data, tutorOptions.tutorMode);
   } catch (error) {
     // A caller stop and the timeout ceiling both surface as AbortError, so the
     // caller's own signal decides which one happened; the error name cannot.
@@ -286,6 +365,184 @@ body: JSON.stringify({ prompt, conversation: boundedConversation, currentExpress
         : 'Private/Offline mode is active. The local Tutor API could not be reached; only the client-side deterministic fallback was used.',
     };
   } finally {
+    clearTimeout(timeoutHandle);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
+  }
+}
+
+/**
+ * Streaming twin of askAIMathAssistant against /api/ai/math/stream.
+ *
+ * Identical request contract, privacy guards, stop handling and fallback
+ * behaviour; only the transport differs. `delta` frames carry a growing prefix
+ * of the answer text and are PROVISIONAL — they are reported through `onDelta`
+ * for display only and never treated as a verified result. The final `result`
+ * frame carries the exact payload the JSON endpoint returns and goes through
+ * the same verification-authoritative mapping, so streaming can never loosen
+ * the deterministic-verification pipeline.
+ */
+export async function askAIMathAssistantStream(
+  prompt: string,
+  conversation: AIMessage[] = [],
+  currentExpression?: string,
+  currentResult?: string,
+  mode: 'explain' | 'solve' | 'teach' | 'verify' | 'practice' | 'hint' = 'explain',
+  tutorOptions: TutoringRequestOptions = {},
+  onDelta?: (partialAnswer: string) => void,
+): Promise<AIResponse> {
+  const audienceProfile = tutorOptions.audienceProfile || detectMathAudience(prompt);
+  const language = tutorOptions.language || detectLanguageFromText(prompt);
+  const verificationExpression = currentExpression || extractEquationCandidate(prompt);
+  const deterministicVerification = verificationExpression ? verifyWithDeterministicEngine(verificationExpression) : undefined;
+  const privacy = getOfflinePolicy(tutorOptions.privacyMode);
+  const responseProfile = tutorOptions.responseProfile || 'balanced';
+  const offlineOnly = !privacy.allowCloudAI;
+  const documentContext = activeDocumentToContext();
+  const localOrigin = typeof window === 'undefined' || isLocalCalcoraOrigin(window.location.hostname);
+  if (!localOrigin && (offlineOnly || documentContext)) {
+    return {
+      answer: documentContext
+        ? `This document stays on your device. Document tutoring is unavailable from this hosted origin, so its text was not sent to any server or AI provider.`
+        : fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions).answer,
+      steps: [],
+      isVerified: false,
+      blockedCloudFallback: true,
+      verificationNote: 'Local-only requests are blocked on non-loopback origins. No prompt or document text was sent.',
+      isOfflineFallback: true,
+      responseSource: documentContext ? 'document-insufficient-evidence' : 'local-deterministic',
+      providerMessage: 'Local-only requests are enforced; no cloud provider was contacted.',
+    };
+  }
+
+  const requestTimeoutMs =
+    typeof tutorOptions.requestTimeoutMs === 'number' && tutorOptions.requestTimeoutMs > 0
+      ? tutorOptions.requestTimeoutMs
+      : AI_REQUEST_TIMEOUT_MS;
+
+  const abortController = new AbortController();
+  const timeoutHandle = setTimeout(() => abortController.abort(), requestTimeoutMs);
+  const externalSignal = tutorOptions.abortSignal;
+  const onExternalAbort = () => abortController.abort();
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+  // A streaming upstream that stalls mid-generation must still end after 60 s
+  // without data, instead of holding the connection for the full ceiling.
+  const STREAM_IDLE_TIMEOUT_MS = 60_000;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetIdleTimer = (): void => {
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => abortController.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  const clearIdleTimer = (): void => {
+    if (idleTimer !== null) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+
+  try {
+    const res = await fetch('/api/ai/math/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: abortController.signal,
+      body: buildAiMathRequestBody({
+        prompt,
+        conversation,
+        currentExpression,
+        currentResult,
+        mode,
+        tutorOptions,
+        audienceProfile,
+        language,
+        responseProfile,
+        offlineOnly,
+        documentContext,
+        deterministicVerification,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Server responded with HTTP ${res.status}`);
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      // Older backend without the streaming endpoint: payload shape is identical
+      // to the JSON endpoint, so the same authoritative mapping applies.
+      const data = await res.json();
+      return mapServerPayloadToAIResponse(data, tutorOptions.tutorMode);
+    }
+    if (!res.body) throw new Error('Streaming is not supported in this environment');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let applied = '';
+    let streamedError: unknown = null;
+    let resultPayload: unknown = null;
+    resetIdleTimer();
+    for (;;) {
+      const { done, value } = await reader.read();
+      resetIdleTimer();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const { frames, rest } = parseSseFrames(buffer);
+      buffer = rest;
+      for (const frame of frames) {
+        if (frame.event === 'delta') {
+          const chunk = typeof JSON.parse(frame.data) === 'string' ? String(JSON.parse(frame.data)) : '';
+          applied += chunk;
+          onDelta?.(applied);
+        } else if (frame.event === 'result') {
+          resultPayload = JSON.parse(frame.data);
+          // The verified final answer supersedes everything provisional.
+          clearIdleTimer();
+        } else if (frame.event === 'error') {
+          streamedError = JSON.parse(frame.data) ?? frame.data;
+        }
+      }
+    }
+    clearIdleTimer();
+    // The final result frame is authoritative and fully verified.
+    if (resultPayload) return mapServerPayloadToAIResponse(resultPayload as Record<string, unknown>, tutorOptions.tutorMode);
+    if (streamedError) {
+      throw new Error(`Server streamed an error payload: ${JSON.stringify(streamedError)}`);
+    }
+    throw new Error('The streaming response ended without a verified result');
+  } catch (error) {
+    // A caller stop and the timeout ceiling both surface as AbortError, so the
+    // caller's own signal decides which one happened; the error name cannot.
+    if (externalSignal?.aborted) {
+      return {
+        answer: 'You stopped this request before it answered. No AI provider was read from and nothing else was computed.',
+        steps: [],
+        isVerified: false,
+        verificationNote: 'Request stopped by the user before any AI response arrived.',
+        isOfflineFallback: false,
+        providerMessage: 'Request stopped by you. No AI provider returned a response.',
+      };
+    }
+    const timedOut = isTimeoutError(error);
+    console.warn(
+      timedOut
+        ? `AI Tutor stream stalled or exceeded ${requestTimeoutMs} ms; using the local deterministic fallback.`
+        : 'AI streaming call failed; using the local deterministic fallback.',
+    );
+    const fallback = fallbackLocalMathTutor(prompt, currentExpression, currentResult, tutorOptions);
+    const status = error instanceof Error ? error.message.match(/HTTP (\d{3})/)?.[1] : undefined;
+    const statusDetail = status ? ` (HTTP ${status})` : '';
+    if (timedOut) {
+      return {
+        ...fallback,
+        providerMessage: privacy.allowCloudAI
+          ? `The Tutor stream stalled or exceeded ${requestTimeoutMs} ms and was stopped waiting. The response below was computed by Calcora's deterministic engine; no AI provider answered.`
+          : `Private/Offline mode is active. The Tutor stream stalled or exceeded ${requestTimeoutMs} ms and was stopped waiting; only Calcora's deterministic engine produced the response below.`,
+      };
+    }
+    return {
+      ...fallback,
+      providerMessage: privacy.allowCloudAI
+        ? `Gemini or the local Tutor API could not be reached on the streaming path${statusDetail}. The response below came from Calcora's client-side deterministic fallback; no cloud response was received.`
+        : 'Private/Offline mode is active. The local Tutor API could not be reached on the streaming path; only the client-side deterministic fallback was used.',
+    };
+  } finally {
+    clearIdleTimer();
     clearTimeout(timeoutHandle);
     externalSignal?.removeEventListener('abort', onExternalAbort);
   }
