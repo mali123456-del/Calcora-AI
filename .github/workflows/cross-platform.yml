@@ -13,6 +13,7 @@ jobs:
   verify:
     name: Verify ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -21,7 +22,11 @@ jobs:
             package: dist:linux
           - os: windows-latest
             package: dist:win
-          - os: macos-latest
+          # macos-latest targets the arm64 pool, which has recurring hosted-runner
+          # capacity failures ("job was not acquired by Runner of type hosted").
+          # The Intel x64 pool is a separate capacity domain and the label is
+          # supported long-term; dist:mac then verifies the x64 dmg/zip artifacts.
+          - os: macos-15-intel
             package: dist:mac
     steps:
       - name: Checkout
