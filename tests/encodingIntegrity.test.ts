@@ -5,12 +5,14 @@ import { readFileSync } from 'node:fs';
 /**
  * Text-encoding integrity guard.
  *
- * A prior recovery repaired cp437 mojibake (`ΓÇ…`-style sequences) across several
- * source files. A separate, unrelated corruption was also found in
- * `vite.config.ts`: the UTF-8 bytes of an em dash (e2 80 94) had been decoded as
- * Latin-1, leaving `modifyâ<U+0080><U+0094>file`. Both classes are invisible in a
- * normal diff review, so this test scans every tracked text file and fails on the
- * unambiguous double-encoding signatures.
+ * A prior recovery repaired cp437 mojibake (a capital gamma followed by CP437
+ * graphic glyphs) across several source files. A separate, unrelated corruption
+ * was also found in `vite.config.ts`: the UTF-8 bytes of an em dash (e2 80 94) had
+ * been decoded as Latin-1, leaving the word "modify" followed by a-acircumflex and
+ * two C1 control bytes before "file". Both classes are invisible in a normal diff
+ * review, so this test scans every tracked text file and fails on the unambiguous
+ * double-encoding signatures. This file is excluded from its own scan because it
+ * must contain those signatures as literal constants.
  *
  * It does not attempt any encoding rewrite; it only reports corruption so a human
  * can repair the specific file.
@@ -60,6 +62,9 @@ if (!gitAvailable) {
   const offenders: string[] = [];
   for (const file of tracked) {
     if (excluded.test(file)) continue;
+    // This guard embeds the corruption signatures as literal constants, so it can
+    // never pass a scan of itself.
+    if (file.replace(/\\/g, '/').endsWith('tests/encodingIntegrity.test.ts')) continue;
     if (!TEXT_FILE.test(file)) continue;
     let text: string;
     try {
