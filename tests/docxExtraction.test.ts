@@ -112,6 +112,12 @@ async function run() {
   const syncSearch = syncService.search('quadratic formula', { documentId: syncDoc.id });
   assert.ok(syncSearch.length > 0, 'intelligenceSync DOCX content should be searchable');
 
+  // 6. A decompression bomb must be rejected, not expanded into memory.
+  const bomb = buildDocx('x'.repeat(20 * 1024 * 1024));
+  const bombResult = await extractDocxText(bomb);
+  assert.equal(bombResult.text, '', 'oversized DOCX entry must not be expanded');
+  assert.ok(bombResult.warnings.length > 0, 'oversized DOCX entry must surface a warning');
+
   console.log('DOCX extraction tests passed');
 }
 

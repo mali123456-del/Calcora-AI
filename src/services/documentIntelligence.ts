@@ -41,6 +41,12 @@ export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
 export const MAX_CHUNKS_PER_DOCUMENT = 2000;
 export const DEFAULT_CHUNK_SIZE_CHARS = 800;
 export const DEFAULT_CHUNK_OVERLAP_CHARS = 100;
+/**
+ * Cap on the decompressed size of a single DOCX zip entry. A small, highly
+ * compressible archive can otherwise expand to gigabytes (zip bomb); the outer
+ * 25 MB file limit does not bound the expanded size.
+ */
+export const MAX_DOCX_ENTRY_BYTES = 16 * 1024 * 1024; // 16 MB of XML text
 
 export type DocumentFormat =
   | 'pdf'
@@ -217,6 +223,7 @@ async function readZipEntryText(zip: Uint8Array, entryName: string): Promise<str
     if (cursor + 46 > zip.length || view.getUint32(cursor, true) !== 0x02014b50) break;
     const method = view.getUint16(cursor + 10, true);
     const compressedSize = view.getUint32(cursor + 20, true);
+    const uncompressedSize = view.getUint32(cursor + 24, true);
     const nameLength = view.getUint16(cursor + 28, true);
     const extraLength = view.getUint16(cursor + 30, true);
     const commentLength = view.getUint16(cursor + 32, true);
@@ -226,6 +233,9 @@ async function readZipEntryText(zip: Uint8Array, entryName: string): Promise<str
 
     const isMatch = name.length === nameBytes.length && name.every((b, j) => b === nameBytes[j]);
     if (isMatch) {
+      if (uncompressedSize > MAX_DOCX_ENTRY_BYTES) {
+        throw new Error(`decompressed entry too large (${uncompressedSize} bytes)`);
+      }
       if (localOffset + 30 > zip.length || view.getUint32(localOffset, true) !== 0x04034b50) {
         throw new Error('corrupted local header');
       }
@@ -234,10 +244,15 @@ async function readZipEntryText(zip: Uint8Array, entryName: string): Promise<str
       const dataStart = localOffset + 30 + localNameLength + localExtraLength;
       const data = zip.subarray(dataStart, dataStart + compressedSize);
 
-      if (method === 0) return new TextDecoder('utf-8', { fatal: false }).decode(data);
+      if (method === 0) {
+        const stored = new TextDecoder('utf-8', { fatal: false }).decode(data);
+        return stored.slice(0, MAX_DOCX_ENTRY_BYTES);
+      }
       if (method === 8) {
         const stream = new Response(data as unknown as BodyInit).body!.pipeThrough(new DecompressionStream('deflate-raw'));
-        return await new Response(stream).text();
+        const inflated = await new Response(stream).text();
+        // The central-directory size can lie; clamp the real output too.
+        return inflated.slice(0, MAX_DOCX_ENTRY_BYTES);
       }
       throw new Error(`unsupported compression method ${method}`);
     }

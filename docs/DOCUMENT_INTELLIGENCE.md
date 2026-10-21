@@ -15,14 +15,14 @@ Calcora AI Document Intelligence provides a bounded, multi-format, deterministic
 | **Markup & Text** | `.md`, `.markdown`, `.txt` | Plain-text line reader | Section headers (`#`, `##`), line-numbered blocks |
 | **Web Documents** | `.html`, `.htm` | Clean text extractor | Page title, heading hierarchies, sanitized body content |
 | **Source Code** | `.ts`, `.py`, `.java`, `.cpp`, `.rs`, `.sql`, etc. | Syntax-aware line reader | Functions, interfaces, classes, line numbers |
-| **Word Processing** | `.docx` | XML stream reader | Document paragraphs, headings, bulleted lists |
+| **Word Processing** | `.docx` | Zip central-directory reader; `word/document.xml` inflated with `DecompressionStream('deflate-raw')` then converted from WordprocessingML to text (paragraph/line breaks preserved) | Document paragraphs, headings |
 
 ## 3. Security Limits and Safety Bounds
 
 - **Maximum Document Size:** 25 MB (`MAX_DOCUMENT_BYTES = 25 * 1024 * 1024`)
 - **Maximum Chunks per Document:** 2,000 (`MAX_CHUNKS_PER_DOCUMENT = 2000`)
 - **Target Chunk Size:** 800 characters with 100-character line boundary overlaps
-- **Zip-Bomb Defenses:** Expanded size validation and entry count limits (for `.xlsx` and `.docx`)
+- **Zip-Bomb Defenses:** Expanded size validation and entry count limits (for `.xlsx` and `.docx`). DOCX extraction additionally caps a single decompressed entry at 16 MB (`MAX_DOCX_ENTRY_BYTES`), rejecting the archive rather than expanding it.
 - **Untrusted Context Guard:** Document text is treated as unprivileged data. System instructions or formatting overrides embedded in document text are stripped and disarmed before reaching inference.
 
 ## 4. Citation and Provenance Contract
