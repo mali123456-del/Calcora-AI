@@ -77,4 +77,30 @@ assert.deepEqual(formatEngineeringNotation(-Infinity), {
   prefix: '',
 });
 
+// --- Unary sign vs exponentiation precedence -----------------------------------
+// A leading unary minus binds looser than `^`, so `-3^2` is `-(3^2) = -9`, not
+// `(-3)^2 = 9`. A sign that directly follows `^`, however, belongs to the exponent:
+// `2^-3` is `2^(-3) = 0.125`. Both were previously mishandled (the first because
+// unary minus outranked `^`, swapping the sign on every `-a^b`).
+const precedenceCases: Array<[string, number]> = [
+  ['-3^2', -9],
+  ['3*-2^2', -12],
+  ['2*-3^2', -18],
+  ['-4^2+1', -15],
+  ['1-2^2', -3],
+  ['(-3)^2', 9],
+  ['-(3^2)', -9],
+  ['2^-2', 0.25],
+  ['-2^-2', -0.25],
+  ['2^-3', 0.125],
+  ['2^3^2', 512],
+  ['-2*3', -6],
+  ['2--3', 5],
+  ['--5', 5],
+];
+for (const [expression, expected] of precedenceCases) {
+  const calculation = calculateExpression(expression);
+  assert.equal(calculation.value, expected, `${expression} should equal ${expected}`);
+}
+
 console.log('Math engine regression tests passed');

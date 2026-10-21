@@ -25,6 +25,13 @@ export type TokenType =
 export interface Token {
   type: TokenType;
   value: string;
+  /**
+   * Set on a unary sign that directly follows a power operator, e.g. the minus in
+   * `2^-3`. Because `^` is looser than a leading sign (`-3^2 = -(3^2)`), the sign
+   * must instead bind tightly into the exponent here, so the shunting-yard treats
+   * it with high precedence. Left undefined for ordinary unary signs.
+   */
+  exponentSign?: boolean;
 }
 
 // Convert angle to radians based on active mode
@@ -177,9 +184,11 @@ const PRECEDENCE: Record<string, number> = {
   '/': 2,
   '%': 2,
   'mod': 2,
+  // Unary sign binds tighter than * and / but looser than ^, so -3^2 means
+  // -(3^2) = -9 and 3*-2^2 means 3*(-(2^2)) = -12, matching standard notation.
+  'u-': 2.5, // Unary minus
+  'u+': 2.5, // Unary plus
   '^': 3, // Right-associative power
-  'u-': 4, // Unary minus
-  'u+': 4, // Unary plus
 };
 
 const RIGHT_ASSOCIATIVE = new Set(['^', 'u-', 'u+']);
@@ -322,6 +331,10 @@ export function tokenize(rawExpr: string): Token[] {
         processed.push({
           type: 'OPERATOR',
           value: curr.value === '-' ? 'u-' : 'u+',
+          // A sign immediately after `^` binds into the exponent: `2^-3` is 2^(-3).
+          // Without this the sign would be applied after the power due to the
+          // looser unary precedence needed for `-3^2 = -(3^2)`.
+          exponentSign: prev?.type === 'OPERATOR' && prev.value === '^',
         });
         continue;
       }
@@ -386,14 +399,16 @@ export function toRPN(tokens: Token[]): Token[] {
 
       case 'OPERATOR': {
         const o1 = token.value;
-        const p1 = PRECEDENCE[o1] || 0;
+        // A sign bound directly into an exponent (`2^-3`) must not be popped by a
+        // looser operator on the stack, so give it the highest precedence.
+        const p1 = token.exponentSign ? 4 : PRECEDENCE[o1] || 0;
         const isRightAssoc = RIGHT_ASSOCIATIVE.has(o1);
 
         while (operatorStack.length > 0) {
           const top = operatorStack[operatorStack.length - 1];
           if (top.type === 'LPAREN') break;
 
-          const p2 = PRECEDENCE[top.value] || 0;
+          const p2 = top.exponentSign ? 4 : PRECEDENCE[top.value] || 0;
           if (top.type === 'FUNCTION' || p2 > p1 || (p2 === p1 && !isRightAssoc)) {
             output.push(operatorStack.pop()!);
           } else {
