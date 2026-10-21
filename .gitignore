@@ -13,6 +13,32 @@ desktop.ini
 
 .forge-permissions.json
 
+# electron-builder output. The configured output directory is `release/` (see
+# package.json > build.directories.output), but electron-builder also writes
+# these alongside the project when run with default/external arguments. They are
+# generated installers and metadata, never source.
+*.exe
+*.blockmap
+latest.yml
+builder-debug.yml
+builder-effective-config.yaml
+win-unpacked/
+win-ia32-unpacked/
+win-arm64-unpacked/
+mac/
+mac-arm64/
+linux-unpacked/
+dist_electron/
+
+# Local llama.cpp native runtime (DLLs/SOs) used by the on-device model feature.
+# These are downloaded per-architecture tool binaries, not project source. The
+# runtime resolves them from `~/calcora-tools/llama.cpp` (see
+# src/services/localRuntimePlatform.ts); a copy placed at the repo root must never
+# be committed. The curated, license-documented bundle under `tools/llama.cpp/`
+# is intentionally tracked and is NOT matched here.
+/llama.cpp/
+/calcora-tools/
+
 # Local AI-tooling session transcripts. These are generated scratch output from
 # assistant sessions, not project source, and are kept on disk but never committed.
 chat_*.md
