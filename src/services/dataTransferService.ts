@@ -233,13 +233,27 @@ export function saveCalcoraDataSnapshot(snapshot: CalcoraDataSnapshot): void {
 export function deleteCalcoraData(kind: 'history' | 'saved-problems' | 'learning' | 'tutor' | 'all'): void {
   const store = storage();
   if (!store) return;
-  if (kind === 'history' || kind === 'all') store.removeItem(STORAGE_KEYS.history);
-  if (kind === 'saved-problems' || kind === 'all') {
+  if (kind === 'all') {
+    // The UI promises a full local reset, so purge every key the app owns rather
+    // than an enumerated list: a future module's keys must never survive it.
+    // Scoped to Calcora's key namespaces so third-party keys on the same origin
+    // (e.g. browser extensions) are untouched.
+    const appPrefixes = ['calcora_', 'calc_', 'digital_calc_'];
+    const doomed: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key && appPrefixes.some((prefix) => key.startsWith(prefix))) doomed.push(key);
+    }
+    for (const key of doomed) store.removeItem(key);
+    return;
+  }
+  if (kind === 'history') store.removeItem(STORAGE_KEYS.history);
+  if (kind === 'saved-problems') {
     const agent = validateAgentData(readJSON(STORAGE_KEYS.agentData));
     agent.savedProblems = [];
     store.setItem(STORAGE_KEYS.agentData, JSON.stringify(agent));
   }
-  if (kind === 'learning' || kind === 'all') {
+  if (kind === 'learning') {
     store.removeItem(STORAGE_KEYS.tutorStats);
     store.removeItem(STORAGE_KEYS.tutorMistakes);
     const agent = validateAgentData(readJSON(STORAGE_KEYS.agentData));
@@ -247,16 +261,10 @@ export function deleteCalcoraData(kind: 'history' | 'saved-problems' | 'learning
     agent.mistakes = [];
     store.setItem(STORAGE_KEYS.agentData, JSON.stringify(agent));
   }
-  if (kind === 'tutor' || kind === 'all') {
+  if (kind === 'tutor') {
     // Deleting tutor data removes every workspace's conversation, not just the
     // active one: the control promises deletion of tutor transcripts.
     store.removeItem(STORAGE_KEYS.tutorConversation);
     store.removeItem(STORAGE_KEYS.legacyTutorConversation);
-  }
-  if (kind === 'all') {
-    store.removeItem(STORAGE_KEYS.workspaces);
-    store.removeItem(STORAGE_KEYS.activeWorkspace);
-    store.removeItem(STORAGE_KEYS.tutorSettings);
-    store.removeItem(STORAGE_KEYS.agentData);
   }
 }

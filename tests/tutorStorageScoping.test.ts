@@ -123,4 +123,22 @@ for (let i = 0; i < 30; i++) {
 const storeRaw = JSON.parse(backing.getItem(V3_KEY)!) as { conversations: Record<string, unknown> };
 assert.equal(Object.keys(storeRaw.conversations).length <= 25, true, 'conversation buckets must be bounded');
 
+// 8. "Reset all local data" purges every app-owned key, including ones the
+//    enumerated delete list can miss (notebooks, currency usage, settings), while
+//    leaving unrelated keys on the same origin untouched.
+backing.setItem('calcora_notebooks_v1', JSON.stringify([{ id: 'nb1' }]));
+backing.setItem('calcora_currency_history_v2', JSON.stringify([{ from: 'USD', to: 'EUR' }]));
+backing.setItem('calc_formula_favs', JSON.stringify(['pythagoras']));
+backing.setItem('digital_calc_workspaces', JSON.stringify([{ id: 'w1' }]));
+backing.setItem('some-extension:private-key', 'keep-me');
+deleteCalcoraData('all');
+assert.equal(backing.getItem('calcora_notebooks_v1'), null, 'notebooks must be erased by a full reset');
+assert.equal(backing.getItem('calcora_currency_history_v2'), null, 'currency usage must be erased by a full reset');
+assert.equal(backing.getItem('calc_formula_favs'), null, 'formula favourites must be erased by a full reset');
+assert.equal(backing.getItem('digital_calc_workspaces'), null, 'workspaces must be erased by a full reset');
+assert.equal(backing.getItem(V3_KEY), null, 'the workspace conversation store must be erased');
+assert.equal(backing.getItem('some-extension:private-key'), 'keep-me', 'third-party keys on the same origin must survive');
+assert.equal(backing.getItem('calc_history_v2'), null, 'history must be erased');
+assert.equal(backing.getItem('calcora_agent_data_v1'), null, 'agent data must be erased');
+
 console.log('Workspace-scoped tutor storage tests passed');
