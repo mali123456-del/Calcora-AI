@@ -103,3 +103,15 @@ states so per language rather than in aggregate.
 | Duplicate copies retired | **PASS** | 6,148.4 MB removed |
 | Primary model retirement | **BLOCKED** | sole generative path |
 | Fine-tuning / LoRA / distillation | **NOT IMPLEMENTED** | no run performed |
+## 9. Batch 6 (dashboard/navigation, hybrid local AI, tutor product knowledge)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Home dashboard (hero, quick-ask -> Tutor, quick tiles) | **PASS** | `HomeDashboardPanel.tsx`; browser smoke: quick-ask prefilled Tutor, verified answer returned |
+| Recent Activity from real data only | **PASS** | real `calc.history` + real `loadTutorStats()`; honest empty state; no fabricated metrics |
+| System Status probes (measured, honest) | **PASS** | `/api/health` 4 s timeout, service-worker controller, localStorage write probe, `/api/ai/local-models`; browser smoke: API Online / SW Active / Local Storage Healthy / honest cloud pointer to Developer > Providers |
+| Desktop sidebar navigation | **PASS** | `AppSidebar.tsx` lg+ only; 18 items all map to real rendered workspaces; `aria-current`; Online/Offline footer via browser connectivity events; header remains the compact nav |
+| Ollama status discovery (GET /api/tags, 2.5 s bounded) | **PASS** | `universalModelManager.probeOllamaStatus()` + `tests/ollamaRegistryStatus.test.ts` (reachable / ECONNREFUSED / HTTP 503) |
+| Ollama chat completion through the model manager | **NOT IMPLEMENTED** | discovery labeled status-only in the diagnostic; no completion path claimed |
+| Tutor product knowledge (versioned, curated) | **PASS** | `src/knowledge/productKnowledge.ts` (v2, 9 evidence-backed facts) injected through `buildTutorGroundingContext`; `tests/productKnowledge.test.ts` re-derives 115 languages, RTL codes, 6-endpoint allowlist, 4 verification states and requires every cited file to exist |
+| Live cloud provider runtime test | **BLOCKED** | no authorized API key available; nothing fabricated |
