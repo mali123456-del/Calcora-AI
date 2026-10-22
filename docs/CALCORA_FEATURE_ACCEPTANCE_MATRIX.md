@@ -73,6 +73,11 @@ states so per language rather than in aggregate.
 |---|---|---|
 | Calculation + verification trace | **PASS** | reproducible id, verified in packaged CDP run |
 | Structured JSON export | **PASS** | `DeveloperPanel` |
+| API Playground (real allowlist, validated bodies, cancel, measured duration, bounded sanitized history) | **PASS** | `developerEndpoints.ts`, `tests/developerEndpoints.test.ts` |
+| Provider/model inspector (registry states, masked keys, honest untested labels) | **PASS** | `DeveloperPanel.tsx` Providers tab over `/api/models/registry` + `/api/ai/local-models` |
+| Diagnostics (bounded capture, severity/subsystem filters, redacted export) | **PASS** | `developerDiagnostics.ts`, `tests/developerDiagnostics.test.ts` |
+| Developer settings (clamped retention/bound, confirm on reset) | **PASS** | `DeveloperPanel.tsx` Settings tab |
+| Cancellation on panel unmount / tab switch + stale-generation guard | **PASS** | `AIAssistantPanel.tsx` cleanup effect and generation guard |
 | Capability registry | **PASS** | 20 entries, 9 assertions |
 | Typecheck | **PASS** | 0 issues |
 | Regression | **PASS** | 67/67 |

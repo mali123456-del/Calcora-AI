@@ -364,6 +364,18 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const tutorConversationIdRef = useRef<string | null>(null);
 /** Aborts the in-flight Tutor request when the user presses Stop. */
 const activeRequestAbortRef = useRef<AbortController | null>(null);
+// This counter invalidates every older in-flight request when a newer one
+// starts, or when the panel unmounts (tab switch / navigation).
+const requestGenerationRef = useRef(0);
+
+// Cancellation must be reliable across tab changes and navigation: the panel is
+// conditionally rendered, so switching tabs unmounts it while a request may
+// still be streaming. Aborting here (and invalidating the generation) makes the
+// cleanup explicit instead of leaving a request running with no owner.
+useEffect(() => () => {
+  activeRequestAbortRef.current?.abort();
+  requestGenerationRef.current += 1;
+}, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -597,6 +609,12 @@ const activeRequestAbortRef = useRef<AbortController | null>(null);
     setSpeechError(null);
     setIsLoading(true);
     const stopController = new AbortController();
+    // A superseded request must not keep streaming: cancel it before a new one starts.
+    activeRequestAbortRef.current?.abort();
+    // Stale-response guard: only the newest in-flight request is allowed to
+    // update the transcript. An unmount, tab switch or newer send invalidates
+    // every older generation, so a late response can never overwrite fresh text.
+    const generation = ++requestGenerationRef.current;
     activeRequestAbortRef.current = stopController;
 
     try {
@@ -624,8 +642,12 @@ const activeRequestAbortRef = useRef<AbortController | null>(null);
         // Live partial text. Provisional by contract: the streaming client only
         // surfaces a growing prefix, and this state is cleared below before any
         // final (verified) response is rendered.
-        (partial) => { setStreamingAnswer(partial); },
+        (partial) => {
+          if (generation === requestGenerationRef.current) setStreamingAnswer(partial);
+        },
       );
+
+      if (generation !== requestGenerationRef.current) return;
 
       // If the AI extracted a calculator-ready expression for an explicit
       // calculation request, run it through the deterministic calculator too.
@@ -706,6 +728,7 @@ const activeRequestAbortRef = useRef<AbortController | null>(null);
         setActiveHints(generateProgressiveHints(sanitized, response.expression || undefined, response.steps, response.answer));
       }
     } catch {
+      if (generation !== requestGenerationRef.current) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -716,8 +739,12 @@ const activeRequestAbortRef = useRef<AbortController | null>(null);
         },
       ]);
     } finally {
-      setStreamingAnswer(null);
-      setIsLoading(false);
+      // Only the still-current request resets these: a superseded or unmounted
+      // generation must not clobber the state a newer request is driving.
+      if (generation === requestGenerationRef.current) {
+        setStreamingAnswer(null);
+        setIsLoading(false);
+      }
       if (activeRequestAbortRef.current === stopController) activeRequestAbortRef.current = null;
     }
   };
