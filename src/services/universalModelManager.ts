@@ -118,6 +118,35 @@ export class UniversalModelManager {
   }
 
   /**
+   * Live Ollama status discovery: GET /api/tags on the operator-configured
+   * endpoint. Bounded (2.5 s), GET-only, no traversal of user input — the base
+   * URL comes exclusively from CALCORA_OLLAMA_URL / stored provider config.
+   * Returns only what the route itself reports; never synthesises availability.
+   */
+  private async probeOllamaStatus(baseUrl: string): Promise<{ reachable: boolean; models: Array<{ id: string; displayName: string }>; reason: string }> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/api/tags`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+      if (!response.ok) {
+        return { reachable: false, models: [], reason: `HTTP ${response.status}` };
+      }
+      const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+      const discovered = (payload.models ?? [])
+        .map((entry) => entry.name || entry.model || '')
+        .filter((name): name is string => Boolean(name))
+        .filter((name, index, all) => all.indexOf(name) === index)
+        .slice(0, 12)
+        .map((name) => ({ id: `ollama:${name}`, displayName: name }));
+      return { reachable: true, models: discovered, reason: 'ok' };
+    } catch (error) {
+      const reason = (error as { name?: string })?.name === 'TimeoutError'
+        ? 'the endpoint did not answer within 2.5 s'
+        : 'the endpoint could not be reached (not running or wrong URL)';
+      return { reachable: false, models: [], reason };
+    }
+  }
+
+  /**
    * Returns current provider statuses with credentials strictly redacted.
    */
   public async getProviderRegistryStatus(): Promise<Array<{
@@ -181,27 +210,42 @@ export class UniversalModelManager {
       models: ggufModels,
     });
 
-    // 3. Ollama
+    // 3. Ollama — a real reachability probe against the configured endpoint.
+    // The probe only lists models via GET /api/tags; it is explicitly labeled
+    // as status discovery, never as a completed chat integration.
     const ollamaConfig = this.configs.get('ollama');
+    const ollamaBaseUrl = ollamaConfig?.baseUrl || process.env.CALCORA_OLLAMA_URL || 'http://127.0.0.1:11434';
+    const ollamaProbe = await this.probeOllamaStatus(ollamaBaseUrl);
     registry.push({
       provider: 'ollama',
       enabled: ollamaConfig?.enabled ?? true,
       isLocal: true,
-      configuredEndpoint: ollamaConfig?.baseUrl || 'http://127.0.0.1:11434',
+      configuredEndpoint: ollamaBaseUrl,
       hasKey: false,
       maskedKey: 'not-required',
-      models: [
-        {
-          id: 'ollama-qwen2.5-math',
-          provider: 'ollama',
-          displayName: 'Ollama: qwen2.5-math (Local)',
-          isLocal: true,
-          capabilities: ['math-symbolic', 'reasoning'],
-          contextWindow: 4096,
-          isAvailable: false,
-          diagnostic: 'The Ollama adapter is not connected to the model manager.',
-        },
-      ],
+      models: ollamaProbe.reachable
+        ? ollamaProbe.models.map((model) => ({
+            id: model.id,
+            provider: 'ollama' as const,
+            displayName: `Ollama: ${model.displayName}`,
+            isLocal: true,
+            capabilities: ['general', 'fast', 'reasoning'],
+            contextWindow: 0,
+            isAvailable: true,
+            diagnostic: 'Discovered through the /api/tags status route. Context limit is not reported by this route; chat completion through Ollama is not yet implemented by the model manager (status discovery only).',
+          }))
+        : [
+            {
+              id: 'ollama-qwen2.5-math',
+              provider: 'ollama' as const,
+              displayName: 'Ollama: configured endpoint',
+              isLocal: true,
+              capabilities: ['math-symbolic', 'reasoning'],
+              contextWindow: 4096,
+              isAvailable: false,
+              diagnostic: `Ollama is not reachable at ${ollamaBaseUrl} (${ollamaProbe.reason}). This is a live probe result, not an integration failure claim.`,
+            },
+          ],
     });
 
     // 4. Gemini
