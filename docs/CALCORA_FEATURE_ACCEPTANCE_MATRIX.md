@@ -115,3 +115,6 @@ states so per language rather than in aggregate.
 | Ollama chat completion through the model manager | **NOT IMPLEMENTED** | discovery labeled status-only in the diagnostic; no completion path claimed |
 | Tutor product knowledge (versioned, curated) | **PASS** | `src/knowledge/productKnowledge.ts` (v2, 9 evidence-backed facts) injected through `buildTutorGroundingContext`; `tests/productKnowledge.test.ts` re-derives 115 languages, RTL codes, 6-endpoint allowlist, 4 verification states and requires every cited file to exist |
 | Live cloud provider runtime test | **BLOCKED** | no authorized API key available; nothing fabricated |
+| Windows installer (NSIS + portable, `dist:win`) | **PASS** | `release\Calcora-AI-1.0.0-x64-setup.exe` 124.1 MB, `release\Calcora-AI-1.0.0-x64-portable.exe` 123.8 MB, EXIT=0 |
+| Packaged-app first launch + embedded backend health | **PASS** | unpacked launch smoke: calculator window held 12 s+, `/api/health` `{"status":"ok"}` from the embedded backend; fixed by the self-contained server bundle (`tests/serverBundleSelfContain.mjs`) after the junction/node_modules walk failure |
+| Code signing of installer artifacts | **NOT VERIFIED** | signtool steps ran without a certificate; artifacts remain unsigned |
