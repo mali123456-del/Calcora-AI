@@ -5,6 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import { AIMessage } from '../types';
 import { GEMINI_DEFAULT_MODEL } from '../services/geminiStatus';
 import { retrieveMathematicsKnowledge } from '../knowledge/mathematics/retrieval';
+import { retrieveProductKnowledge } from '../knowledge/productKnowledge';
 import { mathematicsKnowledgeIndex, MATHEMATICS_KNOWLEDGE_VERSION, MATH_TUTOR_TRAINING_CORPUS, knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from '../knowledge/mathematics';
 import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
 import {
@@ -530,7 +531,7 @@ useEffect(() => () => {
 
     const localGroundingContext = buildTutorGroundingContext(
       tutorContextRef.current,
-      retrievedKnowledge.map((result) => result.item),
+      [...retrievedKnowledge.map((result) => result.item), ...retrieveProductKnowledge(sanitized)],
     );
     const remoteGroundingContext = remoteRag?.knowledge.length
       ? `\n\nSUPABASE RAG RESULTS:\n${remoteRag.knowledge.map((item) =>
