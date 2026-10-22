@@ -3,7 +3,6 @@ import path from 'path';
 import type { Server } from 'node:http';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { MATH_AUDIENCE_GUIDANCE, type MathAudienceProfile } from './src/knowledge/mathematics/audienceProfiles';
 import { buildCompetitiveCapabilityContext } from './src/knowledge/mathematics/competitiveFeatures';
 import { getTutorLanguageCapability, isTutorLanguage } from './src/ai/tutorLanguages';
@@ -1559,7 +1558,11 @@ export async function startServer(): Promise<Server> {
   });
 
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
+    // Dev-only middleware: vite is loaded lazily so the production server
+    // bundle can be fully self-contained (vite stays external; this branch
+    // never executes when NODE_ENV === 'production', e.g. in the desktop app).
+    const { createServer: createViteDevServer } = await import('vite');
+    const vite = await createViteDevServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(APP_ROOT, 'dist');
