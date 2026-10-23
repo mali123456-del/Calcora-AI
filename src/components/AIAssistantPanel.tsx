@@ -3,7 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { AIMessage } from '../types';
+import { GEMINI_DEFAULT_MODEL } from '../services/geminiStatus';
 import { retrieveMathematicsKnowledge } from '../knowledge/mathematics/retrieval';
+import { retrieveProductKnowledge } from '../knowledge/productKnowledge';
 import { mathematicsKnowledgeIndex, MATHEMATICS_KNOWLEDGE_VERSION, MATH_TUTOR_TRAINING_CORPUS, knowledgeToSupabaseRecord, tutorExampleToSupabaseRecord } from '../knowledge/mathematics';
 import { classifyMathematicalIntent } from '../knowledge/mathematics/intent';
 import {
@@ -12,14 +14,14 @@ import {
   buildTutorGroundingContext,
   TutorConversationContext,
 } from '../knowledge/mathematics/context';
-import { askAIMathAssistant, AIResponse } from '../ai/client';
+import { askAIMathAssistant, askAIMathAssistantStream, AIResponse } from '../ai/client';
 import VerificationBadge from './VerificationBadge';
 import type { PrivacyMode } from '../ai/offlinePolicy';
 import { activeDocumentToContext } from '../services/activeDocument';
 import { resolveSpeechRecognitionLocale } from '../services/speechInput';
 import { shouldAutoCalculateFromPrompt } from '../services/autoCalculateIntent';
 import { DesktopGeminiSettings } from './DesktopGeminiSettings';
-import { loadTutorConversationState, appendTutorMessage, setTutorMode as persistTutorMode, updateTutorProblemContext } from '../services/tutorConversationService';
+import { loadTutorConversationState, appendTutorMessage, truncateLastTutorExchange, setTutorMode as persistTutorMode, updateTutorProblemContext } from '../services/tutorConversationService';
 import {
   createTutorConversation,
   saveTutorMessage,
@@ -301,6 +303,10 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const [messages, setMessages] = useState<AIMessage[]>(() => loadTutorConversationState().messages);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // Provisional streamed answer text. Display only: it is NEVER written into
+  // `messages` and is discarded when the verified final response arrives, so the
+  // deterministic-verification pipeline stays the single source of truth.
+  const [streamingAnswer, setStreamingAnswer] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialPrompt) return;
@@ -357,6 +363,20 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const tutorContextRef = useRef<TutorConversationContext>(createTutorConversationContext());
   const [groundedConcepts, setGroundedConcepts] = useState<string[]>([]);
   const tutorConversationIdRef = useRef<string | null>(null);
+/** Aborts the in-flight Tutor request when the user presses Stop. */
+const activeRequestAbortRef = useRef<AbortController | null>(null);
+// This counter invalidates every older in-flight request when a newer one
+// starts, or when the panel unmounts (tab switch / navigation).
+const requestGenerationRef = useRef(0);
+
+// Cancellation must be reliable across tab changes and navigation: the panel is
+// conditionally rendered, so switching tabs unmounts it while a request may
+// still be streaming. Aborting here (and invalidating the generation) makes the
+// cleanup explicit instead of leaving a request running with no owner.
+useEffect(() => () => {
+  activeRequestAbortRef.current?.abort();
+  requestGenerationRef.current += 1;
+}, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -511,7 +531,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
     const localGroundingContext = buildTutorGroundingContext(
       tutorContextRef.current,
-      retrievedKnowledge.map((result) => result.item),
+      [...retrievedKnowledge.map((result) => result.item), ...retrieveProductKnowledge(sanitized)],
     );
     const remoteGroundingContext = remoteRag?.knowledge.length
       ? `\n\nSUPABASE RAG RESULTS:\n${remoteRag.knowledge.map((item) =>
@@ -589,9 +609,17 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     setInputPrompt('');
     setSpeechError(null);
     setIsLoading(true);
+    const stopController = new AbortController();
+    // A superseded request must not keep streaming: cancel it before a new one starts.
+    activeRequestAbortRef.current?.abort();
+    // Stale-response guard: only the newest in-flight request is allowed to
+    // update the transcript. An unmount, tab switch or newer send invalidates
+    // every older generation, so a late response can never overwrite fresh text.
+    const generation = ++requestGenerationRef.current;
+    activeRequestAbortRef.current = stopController;
 
     try {
-      const response: AIResponse = await askAIMathAssistant(
+      const response: AIResponse = await askAIMathAssistantStream(
         sanitized,
         messages,
         automaticCalculation?.expression || currentExpression,
@@ -610,8 +638,17 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           language: tutorLanguage,
           privacyMode: attachedDocument ? 'offline' : privacyMode,
           localModelId: selectedLocalModelId || undefined,
-        }
+          abortSignal: stopController.signal,
+        },
+        // Live partial text. Provisional by contract: the streaming client only
+        // surfaces a growing prefix, and this state is cleared below before any
+        // final (verified) response is rendered.
+        (partial) => {
+          if (generation === requestGenerationRef.current) setStreamingAnswer(partial);
+        },
       );
+
+      if (generation !== requestGenerationRef.current) return;
 
       // If the AI extracted a calculator-ready expression for an explicit
       // calculation request, run it through the deterministic calculator too.
@@ -652,7 +689,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               conversation_id: tutorConversationIdRef.current,
               role: 'assistant',
               content: response.answer,
-              model: 'gemini-3.8-flash',
+              model: GEMINI_DEFAULT_MODEL,
               provider: 'gemini',
               status: 'complete',
             });
@@ -692,6 +729,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         setActiveHints(generateProgressiveHints(sanitized, response.expression || undefined, response.steps, response.answer));
       }
     } catch {
+      if (generation !== requestGenerationRef.current) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -702,8 +740,36 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         },
       ]);
     } finally {
-      setIsLoading(false);
+      // Only the still-current request resets these: a superseded or unmounted
+      // generation must not clobber the state a newer request is driving.
+      if (generation === requestGenerationRef.current) {
+        setStreamingAnswer(null);
+        setIsLoading(false);
+      }
+      if (activeRequestAbortRef.current === stopController) activeRequestAbortRef.current = null;
     }
+  };
+
+  // Regenerate: repeat the last unanswered exchange with a fresh request. The
+  // previous question/answer pair is truncated from both the visible transcript
+  // and the persisted Tutor conversation first, so nothing duplicates. Analytics
+  // counters legitimately increment again — a retry is a real attempt.
+  const regenerateLastResponse = () => {
+    if (isLoading) return;
+    const msgs = messages;
+    let lastUserIdx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    // Nothing to regenerate without a user question, or when no answer followed it.
+    if (lastUserIdx === -1 || lastUserIdx === msgs.length - 1) return;
+    const promptToRepeat = msgs[lastUserIdx].content;
+    setMessages(msgs.slice(0, lastUserIdx));
+    truncateLastTutorExchange(loadTutorConversationState());
+    void handleSend(promptToRepeat);
   };
 
   // Toggle voice dictation using Web Speech API
@@ -2192,12 +2258,58 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           );
         })}
 
-        {isLoading && (
+        {isLoading && streamingAnswer !== null && (
+          <div className="flex gap-3 items-start text-xs text-cyan-400">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0">
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+            </div>
+            <div className="flex-1 min-w-0 rounded-xl bg-slate-900/60 border border-cyan-500/20 px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+                Generating — provisional, not yet verified
+              </span>
+              <p className="mt-1 whitespace-pre-wrap break-words text-slate-200 light:text-slate-700">{streamingAnswer}</p>
+            </div>
+            <button
+              id="btn-ai-stop"
+              type="button"
+              onClick={() => { activeRequestAbortRef.current?.abort(); }}
+              className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 hover:border-rose-500/60 transition-all active:scale-95"
+              title="Stop waiting: aborts the request. No AI response will be applied."
+            >
+              Stop
+            </button>
+          </div>
+        )}
+        {isLoading && streamingAnswer === null && (
           <div className="flex gap-3 items-center text-xs text-cyan-400">
             <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0">
               <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
             </div>
             <span>Analyzing problem and synthesizing mathematical proof...</span>
+            <button
+              id="btn-ai-stop"
+              type="button"
+              onClick={() => { activeRequestAbortRef.current?.abort(); }}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/40 hover:border-rose-500/60 transition-all active:scale-95"
+              title="Stop waiting: aborts the request. No AI response will be applied."
+            >
+              Stop
+            </button>
+          </div>
+        )}
+
+        {!isLoading && messages.length >= 2 && messages[messages.length - 1]?.role === 'assistant' && messages[messages.length - 2]?.role === 'user' && (
+          <div className="flex justify-start pl-10">
+            <button
+              id="btn-ai-regenerate"
+              type="button"
+              onClick={regenerateLastResponse}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-slate-100 border border-slate-700/60 hover:border-slate-600 transition-all active:scale-95"
+              title="Ask again: the previous answer is replaced with a fresh response to the same question."
+            >
+              <RefreshCw className="w-3 h-3" />
+              Regenerate
+            </button>
           </div>
         )}
 

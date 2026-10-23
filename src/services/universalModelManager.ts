@@ -19,12 +19,17 @@ import { localGgufRuntime } from './localGgufRuntime';
 import type { LocalModelOption } from '../ai/localModels';
 import { getGeminiCredentialState } from './geminiStatus';
 import { calculateExpression } from '../engine/mathEngine';
+import { globalPrivacyEngine } from './privacyPolicyEngine';
 
 export type AIProviderType = 'local-gguf' | 'ollama' | 'gemini' | 'openai-compatible' | 'local-deterministic';
 
 export type ModelCapability = 'general' | 'math-symbolic' | 'coding' | 'fast' | 'reasoning';
 
 export type PrivacyMode = 'local-only' | 'cloud-allowed' | 'hybrid';
+
+export function permitsExternalProcessing(mode: unknown): mode is 'cloud-allowed' | 'hybrid' {
+  return mode === 'cloud-allowed' || mode === 'hybrid';
+}
 
 export interface ModelDescriptor {
   id: string;
@@ -113,6 +118,35 @@ export class UniversalModelManager {
   }
 
   /**
+   * Live Ollama status discovery: GET /api/tags on the operator-configured
+   * endpoint. Bounded (2.5 s), GET-only, no traversal of user input — the base
+   * URL comes exclusively from CALCORA_OLLAMA_URL / stored provider config.
+   * Returns only what the route itself reports; never synthesises availability.
+   */
+  private async probeOllamaStatus(baseUrl: string): Promise<{ reachable: boolean; models: Array<{ id: string; displayName: string }>; reason: string }> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/api/tags`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+      if (!response.ok) {
+        return { reachable: false, models: [], reason: `HTTP ${response.status}` };
+      }
+      const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+      const discovered = (payload.models ?? [])
+        .map((entry) => entry.name || entry.model || '')
+        .filter((name): name is string => Boolean(name))
+        .filter((name, index, all) => all.indexOf(name) === index)
+        .slice(0, 12)
+        .map((name) => ({ id: `ollama:${name}`, displayName: name }));
+      return { reachable: true, models: discovered, reason: 'ok' };
+    } catch (error) {
+      const reason = (error as { name?: string })?.name === 'TimeoutError'
+        ? 'the endpoint did not answer within 2.5 s'
+        : 'the endpoint could not be reached (not running or wrong URL)';
+      return { reachable: false, models: [], reason };
+    }
+  }
+
+  /**
    * Returns current provider statuses with credentials strictly redacted.
    */
   public async getProviderRegistryStatus(): Promise<Array<{
@@ -176,26 +210,42 @@ export class UniversalModelManager {
       models: ggufModels,
     });
 
-    // 3. Ollama
+    // 3. Ollama — a real reachability probe against the configured endpoint.
+    // The probe only lists models via GET /api/tags; it is explicitly labeled
+    // as status discovery, never as a completed chat integration.
     const ollamaConfig = this.configs.get('ollama');
+    const ollamaBaseUrl = ollamaConfig?.baseUrl || process.env.CALCORA_OLLAMA_URL || 'http://127.0.0.1:11434';
+    const ollamaProbe = await this.probeOllamaStatus(ollamaBaseUrl);
     registry.push({
       provider: 'ollama',
       enabled: ollamaConfig?.enabled ?? true,
       isLocal: true,
-      configuredEndpoint: ollamaConfig?.baseUrl || 'http://127.0.0.1:11434',
+      configuredEndpoint: ollamaBaseUrl,
       hasKey: false,
       maskedKey: 'not-required',
-      models: [
-        {
-          id: 'ollama-qwen2.5-math',
-          provider: 'ollama',
-          displayName: 'Ollama: qwen2.5-math (Local)',
-          isLocal: true,
-          capabilities: ['math-symbolic', 'reasoning'],
-          contextWindow: 4096,
-          isAvailable: true,
-        },
-      ],
+      models: ollamaProbe.reachable
+        ? ollamaProbe.models.map((model) => ({
+            id: model.id,
+            provider: 'ollama' as const,
+            displayName: `Ollama: ${model.displayName}`,
+            isLocal: true,
+            capabilities: ['general', 'fast', 'reasoning'],
+            contextWindow: 0,
+            isAvailable: true,
+            diagnostic: 'Discovered through the /api/tags status route. Context limit is not reported by this route; chat completion through Ollama is not yet implemented by the model manager (status discovery only).',
+          }))
+        : [
+            {
+              id: 'ollama-qwen2.5-math',
+              provider: 'ollama' as const,
+              displayName: 'Ollama: configured endpoint',
+              isLocal: true,
+              capabilities: ['math-symbolic', 'reasoning'],
+              contextWindow: 4096,
+              isAvailable: false,
+              diagnostic: `Ollama is not reachable at ${ollamaBaseUrl} (${ollamaProbe.reason}). This is a live probe result, not an integration failure claim.`,
+            },
+          ],
     });
 
     // 4. Gemini
@@ -216,7 +266,8 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'math-symbolic', 'fast'],
           contextWindow: 1_000_000,
-          isAvailable: hasGeminiKey,
+          isAvailable: false,
+          diagnostic: hasGeminiKey ? 'Gemini is configured, but this model manager has no completion adapter.' : 'Gemini API key is not configured.',
         },
         {
           id: 'gemini-2.5-pro',
@@ -225,7 +276,8 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'reasoning', 'coding'],
           contextWindow: 2_000_000,
-          isAvailable: hasGeminiKey,
+          isAvailable: false,
+          diagnostic: hasGeminiKey ? 'Gemini is configured, but this model manager has no completion adapter.' : 'Gemini API key is not configured.',
         },
       ],
     });
@@ -247,7 +299,10 @@ export class UniversalModelManager {
           isLocal: false,
           capabilities: ['general', 'coding'],
           contextWindow: 32_768,
-          isAvailable: Boolean(oaiConfig?.apiKey || oaiConfig?.baseUrl),
+          isAvailable: false,
+          diagnostic: oaiConfig?.enabled && oaiConfig.apiKey
+            ? 'Credentials are configured, but the OpenAI-compatible completion adapter is not implemented.'
+            : 'OpenAI-compatible credentials are not configured.',
         },
       ],
     });
@@ -276,9 +331,9 @@ export class UniversalModelManager {
       }
     }
 
-    // PRIVACY ENFORCEMENT:
-    // If privacyMode === 'local-only', CLOUD PROVIDERS ARE STRICTLY FORBIDDEN.
-    if (request.privacyMode === 'local-only') {
+    // Fail closed for unknown runtime values as well as the explicit local-only mode.
+    // Only the two consented modes may enter the cloud-provider branch below.
+    if (!permitsExternalProcessing(request.privacyMode) || !globalPrivacyEngine.canSendExternalAIRequest()) {
       const ggufStatus = await localGgufRuntime.getStatus();
       if (ggufStatus.runtimeAvailable && ggufStatus.models.length > 0) {
         try {
@@ -315,27 +370,19 @@ export class UniversalModelManager {
       };
     }
 
-    // Cloud or hybrid route:
-    // In hybrid or cloud-allowed mode, check Gemini or OpenAI-compatible
+    // No live adapter is registered for the cloud providers in this manager. Do not
+    // imply a request was sent or that a model generated a response.
     const geminiConfig = this.configs.get('gemini');
     const geminiState = getGeminiCredentialState(geminiConfig?.apiKey);
-    if (geminiState.state === 'GEMINI_CONFIGURED') {
-      return {
-        content: `Gemini inference ready for grounded mathematical explanation.`,
-        provider: 'gemini',
-        modelId: 'gemini-2.5-flash',
-        isLocal: false,
-        executionTimeMs: Date.now() - startTime,
-      };
-    }
-
-    // Fallback if no cloud key configured
     return {
-      content: `No active AI provider key configured. Please configure an API key or enable local models.`,
+      content: geminiState.state === 'GEMINI_CONFIGURED'
+        ? 'Gemini is configured, but inference is not implemented by this model manager. No cloud request was made.'
+        : 'No available model adapter is configured. Deterministic calculation remains available.',
       provider: 'local-deterministic',
       modelId: 'calcora-deterministic-math',
       isLocal: true,
       executionTimeMs: Date.now() - startTime,
+      warnings: ['No cloud inference was performed because this manager has no registered cloud adapter.'],
     };
   }
 }

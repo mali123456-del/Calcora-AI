@@ -41,6 +41,12 @@ export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
 export const MAX_CHUNKS_PER_DOCUMENT = 2000;
 export const DEFAULT_CHUNK_SIZE_CHARS = 800;
 export const DEFAULT_CHUNK_OVERLAP_CHARS = 100;
+/**
+ * Cap on the decompressed size of a single DOCX zip entry. A small, highly
+ * compressible archive can otherwise expand to gigabytes (zip bomb); the outer
+ * 25 MB file limit does not bound the expanded size.
+ */
+export const MAX_DOCX_ENTRY_BYTES = 16 * 1024 * 1024; // 16 MB of XML text
 
 export type DocumentFormat =
   | 'pdf'
@@ -157,37 +163,124 @@ export function formatCitation(fileName: string, location: SourceLocation): stri
 /**
  * Extracts plain text from DOCX files by reading document.xml from the zip container.
  */
-export function extractDocxText(buffer: Uint8Array): { text: string; warnings: string[] } {
+/**
+ * Extracts plain text from DOCX files by reading document.xml out of the zip
+ * container.
+ *
+ * A .docx is a zip archive whose `word/document.xml` entry is normally
+ * DEFLATE-compressed. Previous versions regex-matched `<w:t>` tags against the raw
+ * (still compressed) bytes, so real documents always extracted to empty text even
+ * though DOCX was advertised as supported. This reader locates the entry in the zip
+ * central directory and inflates it with the standards-based DecompressionStream,
+ * which exists in both modern browsers and Node 18+, so no dependency is added.
+ */
+export async function extractDocxText(buffer: Uint8Array): Promise<{ text: string; warnings: string[] }> {
   const warnings: string[] = [];
   try {
-    // DOCX is a zip archive with word/document.xml
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    // If XLSX reader can parse anything, try sheet text; otherwise fallback to XML parsing
-    if (workbook && workbook.SheetNames.length > 0) {
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const text = XLSX.utils.sheet_to_txt(sheet);
-      if (text.trim()) return { text, warnings };
-    }
-  } catch {
-    // Expected if not spreadsheet
-  }
-
-  // Raw extraction of XML tags from zip buffer
-  try {
-    const raw = Buffer.from(buffer).toString('latin1');
-    const matches = raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-    if (matches && matches.length > 0) {
-      const text = matches
-        .map((m) => m.replace(/<[^>]+>/g, ''))
-        .join(' ')
-        .replace(/\s+/g, ' ');
-      return { text, warnings };
+    const xml = await readZipEntryText(buffer, 'word/document.xml');
+    if (xml) {
+      const text = docxXmlToText(xml);
+      if (text) return { text, warnings };
+      warnings.push('DOCX document contained no readable text runs.');
+      return { text: '', warnings };
     }
   } catch (err) {
     warnings.push(`DOCX text extraction warning: ${err instanceof Error ? err.message : 'corrupted structure'}`);
   }
 
   return { text: '', warnings: ['Could not extract readable text from DOCX document.'] };
+}
+
+/**
+ * Minimal, dependency-free lookup of a single file entry inside a zip archive.
+ *
+ * Walks the End Of Central Directory record to find the central directory, then
+ * reads the matching entry's local header and decompresses its data. Only the two
+ * methods a DOCX realistically uses are supported: 0 (stored) and 8 (deflate).
+ * Returns null when the entry is absent; throws on structural corruption.
+ */
+async function readZipEntryText(zip: Uint8Array, entryName: string): Promise<string | null> {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+
+  // Locate the End Of Central Directory signature (0x06054b50), scanning back over
+  // the optional trailing comment (max 65535 bytes).
+  let eocd = -1;
+  const minEocd = Math.max(0, zip.length - 22 - 0xffff);
+  for (let i = zip.length - 22; i >= minEocd; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('not a zip archive');
+
+  const entryCount = view.getUint16(eocd + 10, true);
+  let cursor = view.getUint32(eocd + 16, true); // central directory offset
+
+  const nameBytes = new TextEncoder().encode(entryName);
+
+  for (let i = 0; i < entryCount; i++) {
+    if (cursor + 46 > zip.length || view.getUint32(cursor, true) !== 0x02014b50) break;
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const uncompressedSize = view.getUint32(cursor + 24, true);
+    const nameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const nameStart = cursor + 46;
+    const name = zip.subarray(nameStart, nameStart + nameLength);
+
+    const isMatch = name.length === nameBytes.length && name.every((b, j) => b === nameBytes[j]);
+    if (isMatch) {
+      if (uncompressedSize > MAX_DOCX_ENTRY_BYTES) {
+        throw new Error(`decompressed entry too large (${uncompressedSize} bytes)`);
+      }
+      if (localOffset + 30 > zip.length || view.getUint32(localOffset, true) !== 0x04034b50) {
+        throw new Error('corrupted local header');
+      }
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const data = zip.subarray(dataStart, dataStart + compressedSize);
+
+      if (method === 0) {
+        const stored = new TextDecoder('utf-8', { fatal: false }).decode(data);
+        return stored.slice(0, MAX_DOCX_ENTRY_BYTES);
+      }
+      if (method === 8) {
+        const stream = new Response(data as unknown as BodyInit).body!.pipeThrough(new DecompressionStream('deflate-raw'));
+        const inflated = await new Response(stream).text();
+        // The central-directory size can lie; clamp the real output too.
+        return inflated.slice(0, MAX_DOCX_ENTRY_BYTES);
+      }
+      throw new Error(`unsupported compression method ${method}`);
+    }
+
+    cursor = nameStart + nameLength + extraLength + commentLength;
+  }
+
+  return null;
+}
+
+/**
+ * Converts WordprocessingML into plain text, preserving paragraph breaks so line
+ * numbering and section context remain meaningful for citations.
+ */
+function docxXmlToText(xml: string): string {
+  return xml
+    .replace(/<w:tab\b[^>]*\/?>/g, '\t')
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<w:br\b[^>]*\/?>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -200,6 +293,11 @@ export function chunkTextWithLines(
   options: { chunkSizeChars?: number; chunkOverlapChars?: number; pageNumber?: number } = {},
 ): DocumentChunk[] {
   const chunkSize = options.chunkSizeChars || DEFAULT_CHUNK_SIZE_CHARS;
+  // Overlap is applied on whole trailing lines so a sentence that straddles a
+  // chunk boundary still appears intact in the following chunk. It is clamped to
+  // strictly less than the chunk size to guarantee forward progress and end.
+  const requestedOverlap = options.chunkOverlapChars ?? DEFAULT_CHUNK_OVERLAP_CHARS;
+  const chunkOverlap = Math.max(0, Math.min(Math.floor(requestedOverlap), Math.max(0, chunkSize - 1)));
   const lines = fullText.split(/\r?\n/);
   const chunks: DocumentChunk[] = [];
 
@@ -242,9 +340,30 @@ export function chunkTextWithLines(
         });
       }
 
-      currentLines = [];
-      currentChars = 0;
-      currentStartLine = lineNum + 1;
+      // Seed the next chunk with the trailing lines that fit inside the overlap
+      // budget. Only do this when more input remains, so the final chunk is not
+      // duplicated.
+      const isLastLine = i === lines.length - 1;
+      if (!isLastLine && chunkOverlap > 0) {
+        const carry: string[] = [];
+        let carryChars = 0;
+        for (let j = currentLines.length - 1; j >= 0; j--) {
+          const candidate = currentLines[j];
+          const candidateChars = candidate.length + 1;
+          // Never let the carried overlap equal or exceed the whole chunk (it
+          // must leave room for at least the next line).
+          if (carryChars + candidateChars > chunkOverlap) break;
+          carry.unshift(candidate);
+          carryChars += candidateChars;
+        }
+        currentLines = carry;
+        currentChars = carryChars;
+        currentStartLine = lineNum + 1 - carry.length;
+      } else {
+        currentLines = [];
+        currentChars = 0;
+        currentStartLine = lineNum + 1;
+      }
     }
   }
 
@@ -394,7 +513,7 @@ export class DocumentIntelligenceService {
       rowCount = tabResult.summary.rowCount;
       if (tabResult.warnings.length > 0) warnings.push(...tabResult.warnings);
     } else if (format === 'docx') {
-      const { text, warnings: docxWarnings } = extractDocxText(buffer);
+      const { text, warnings: docxWarnings } = await extractDocxText(buffer);
       warnings.push(...docxWarnings);
       docChunks = chunkTextWithLines(id, fileName, text);
     } else {

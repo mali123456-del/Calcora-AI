@@ -23,6 +23,24 @@ export interface GeminiErrorClassification {
   retryable: boolean;
 }
 
+/**
+ * Canonical, ordered list of Gemini model identifiers Calcora is allowed to call.
+ *
+ * Only real, currently-available model ids belong here: the @google/genai SDK
+ * validates the id server-side, so an unknown value fails with 404
+ * `GEMINI_MODEL_UNAVAILABLE`. The first entry is the preferred default. Keep this
+ * list as the single source of truth for both the server endpoint and the client
+ * persistence label so the two never drift apart again.
+ */
+export const GEMINI_CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-flash-latest',
+] as const;
+
+/** The preferred Gemini model used when no fallback is needed. */
+export const GEMINI_DEFAULT_MODEL = GEMINI_CANDIDATE_MODELS[0];
+
 const SAFE_MESSAGES: Record<GeminiState, string> = {
   GEMINI_CONFIGURED: 'Gemini is configured.',
   GEMINI_NOT_CONFIGURED: 'Gemini AI is not configured. Deterministic calculator mode remains available.',

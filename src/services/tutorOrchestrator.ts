@@ -13,6 +13,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_CANDIDATE_MODELS } from './geminiStatus';
 import { extractMathProblem } from '../engine/problemExtractor';
 import {
   toolCalculate,
@@ -1635,11 +1636,7 @@ Return your response in clean JSON matching:
 
   const fullPrompt = `${continuityContext}\nUser: ${prompt}`;
 
-  const candidateModels = [
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-flash-latest',
-  ];
+  const candidateModels = [...GEMINI_CANDIDATE_MODELS];
 
   let rawResponseText = '';
   let modelUsed = '';

@@ -10,7 +10,9 @@ const STORAGE_KEYS = {
   history: 'calc_history_v2',
   workspaces: 'digital_calc_workspaces',
   activeWorkspace: 'digital_calc_active_workspace_id',
-  tutorConversation: 'calcora_tutor_conversation_state_v2',
+  /** v3 conversations are per-workspace buckets owned by tutorConversationService. */
+  tutorConversation: 'calcora_tutor_conversation_state_v3',
+  legacyTutorConversation: 'calcora_tutor_conversation_state_v2',
   tutorSettings: 'calcora_tutor_settings_v1',
   tutorStats: 'calcora_tutor_stats_v1',
   tutorMistakes: 'calcora_tutor_mistakes_v1',
@@ -163,16 +165,33 @@ function readJSON(key: string): unknown {
   } catch { return null; }
 }
 
+/**
+ * Reads the tutor conversation for a workspace from the v3 per-workspace store,
+ * falling back to the legacy v2 single-conversation value for exports taken
+ * before the scoping change.
+ */
+function readTutorConversationFor(activeWorkspaceId: string): unknown | null {
+  const workspaceStore = readJSON(STORAGE_KEYS.tutorConversation) as
+    | { version?: number; conversations?: Record<string, unknown> }
+    | null;
+  const bucket = workspaceStore?.conversations && typeof workspaceStore.conversations === 'object'
+    ? workspaceStore.conversations[activeWorkspaceId]
+    : undefined;
+  if (bucket) return bucket;
+  return readJSON(STORAGE_KEYS.legacyTutorConversation);
+}
+
 export function loadCalcoraDataSnapshot(): CalcoraDataSnapshot {
   const workspaces = readJSON(STORAGE_KEYS.workspaces);
   const history = readJSON(STORAGE_KEYS.history);
+  const activeWorkspaceId = storage()?.getItem(STORAGE_KEYS.activeWorkspace) || 'default-workspace';
   return {
     version: 1,
     exportedAt: Date.now(),
     calculationHistory: validateHistory(history),
     workspaces: validateWorkspaces(workspaces),
-    activeWorkspaceId: storage()?.getItem(STORAGE_KEYS.activeWorkspace) || 'default-workspace',
-    tutorConversation: readJSON(STORAGE_KEYS.tutorConversation),
+    activeWorkspaceId,
+    tutorConversation: readTutorConversationFor(activeWorkspaceId),
     tutorSettings: readJSON(STORAGE_KEYS.tutorSettings),
     tutorStats: readJSON(STORAGE_KEYS.tutorStats),
     tutorMistakes: Array.isArray(readJSON(STORAGE_KEYS.tutorMistakes)) ? (readJSON(STORAGE_KEYS.tutorMistakes) as unknown[]).slice(0, MAX_MISTAKES) : [],
@@ -187,8 +206,22 @@ export function saveCalcoraDataSnapshot(snapshot: CalcoraDataSnapshot): void {
   store.setItem(STORAGE_KEYS.history, JSON.stringify(safe.calculationHistory));
   store.setItem(STORAGE_KEYS.workspaces, JSON.stringify(safe.workspaces));
   store.setItem(STORAGE_KEYS.activeWorkspace, safe.activeWorkspaceId);
-  if (safe.tutorConversation) store.setItem(STORAGE_KEYS.tutorConversation, JSON.stringify(safe.tutorConversation));
-  else store.removeItem(STORAGE_KEYS.tutorConversation);
+  if (safe.tutorConversation) {
+    // Write into the v3 per-workspace store so imported conversations land in the
+    // active workspace instead of replacing every conversation (Phase I).
+    const parsed = readJSON(STORAGE_KEYS.tutorConversation) as
+      | { version?: number; conversations?: Record<string, unknown> }
+      | null;
+    const conversations = parsed?.version === 3 && parsed.conversations && typeof parsed.conversations === 'object'
+      ? { ...parsed.conversations }
+      : {};
+    conversations[safe.activeWorkspaceId] = safe.tutorConversation;
+    store.setItem(STORAGE_KEYS.tutorConversation, JSON.stringify({ version: 3, conversations }));
+    store.removeItem(STORAGE_KEYS.legacyTutorConversation);
+  } else {
+    store.removeItem(STORAGE_KEYS.tutorConversation);
+    store.removeItem(STORAGE_KEYS.legacyTutorConversation);
+  }
   if (safe.tutorSettings) store.setItem(STORAGE_KEYS.tutorSettings, JSON.stringify(safe.tutorSettings));
   else store.removeItem(STORAGE_KEYS.tutorSettings);
   if (safe.tutorStats) store.setItem(STORAGE_KEYS.tutorStats, JSON.stringify(safe.tutorStats));
@@ -200,13 +233,27 @@ export function saveCalcoraDataSnapshot(snapshot: CalcoraDataSnapshot): void {
 export function deleteCalcoraData(kind: 'history' | 'saved-problems' | 'learning' | 'tutor' | 'all'): void {
   const store = storage();
   if (!store) return;
-  if (kind === 'history' || kind === 'all') store.removeItem(STORAGE_KEYS.history);
-  if (kind === 'saved-problems' || kind === 'all') {
+  if (kind === 'all') {
+    // The UI promises a full local reset, so purge every key the app owns rather
+    // than an enumerated list: a future module's keys must never survive it.
+    // Scoped to Calcora's key namespaces so third-party keys on the same origin
+    // (e.g. browser extensions) are untouched.
+    const appPrefixes = ['calcora_', 'calc_', 'digital_calc_'];
+    const doomed: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key && appPrefixes.some((prefix) => key.startsWith(prefix))) doomed.push(key);
+    }
+    for (const key of doomed) store.removeItem(key);
+    return;
+  }
+  if (kind === 'history') store.removeItem(STORAGE_KEYS.history);
+  if (kind === 'saved-problems') {
     const agent = validateAgentData(readJSON(STORAGE_KEYS.agentData));
     agent.savedProblems = [];
     store.setItem(STORAGE_KEYS.agentData, JSON.stringify(agent));
   }
-  if (kind === 'learning' || kind === 'all') {
+  if (kind === 'learning') {
     store.removeItem(STORAGE_KEYS.tutorStats);
     store.removeItem(STORAGE_KEYS.tutorMistakes);
     const agent = validateAgentData(readJSON(STORAGE_KEYS.agentData));
@@ -214,11 +261,10 @@ export function deleteCalcoraData(kind: 'history' | 'saved-problems' | 'learning
     agent.mistakes = [];
     store.setItem(STORAGE_KEYS.agentData, JSON.stringify(agent));
   }
-  if (kind === 'tutor' || kind === 'all') store.removeItem(STORAGE_KEYS.tutorConversation);
-  if (kind === 'all') {
-    store.removeItem(STORAGE_KEYS.workspaces);
-    store.removeItem(STORAGE_KEYS.activeWorkspace);
-    store.removeItem(STORAGE_KEYS.tutorSettings);
-    store.removeItem(STORAGE_KEYS.agentData);
+  if (kind === 'tutor') {
+    // Deleting tutor data removes every workspace's conversation, not just the
+    // active one: the control promises deletion of tutor transcripts.
+    store.removeItem(STORAGE_KEYS.tutorConversation);
+    store.removeItem(STORAGE_KEYS.legacyTutorConversation);
   }
 }

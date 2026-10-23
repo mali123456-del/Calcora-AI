@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "icons": "node scripts/generate-app-icons.mjs",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild electron/main.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-electron/preload.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --external:vite --sourcemap --outfile=dist/server.cjs && esbuild electron/main.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-electron/preload.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('fs'); for(const p of ['dist','dist-electron','server.js']) fs.rmSync(p,{recursive:true,force:true})\"",
@@ -21,10 +21,11 @@
     "preelectron": "npm run icons",
     "electron": "electron .",
     "dist:win": "npm run build && npm run icons && electron-builder --win nsis portable --publish never",
-    "test": "npm run test:core && npm run test:tutor && npm run test:knowledge-grounding && npm run test:phase3 && npx tsx --test src/engine/tests/currencyConverter.test.ts",
+    "test": "npm run test:core && npm run test:tutor && npm run test:keyboard && npm run test:service-worker && npm run test:admin-api && npm run test:hygiene && npm run test:encoding && npm run test:client-secrets && npm run test:developer && npm run test:ollama-registry && npm run test:product-knowledge && npm run test:knowledge-grounding && npm run test:phase3 && npx tsx --test src/engine/tests/currencyConverter.test.ts",
     "test:core": "tsx tests/core.test.ts",
     "test:phase3": "tsx tests/phase3Verification.test.ts",
-    "verify": "npm run lint && npm run test:core && npm run test:tutor && npm run test:tutor-modes && npm run test:tutor-languages && npm run test:pdf && npm run test:pdf-tutor && npm run test:knowledge-grounding && npm run test:tutor-conversation && npm run test:tutor-follow-up && npm run test:tutor-safety && npm run test:private-tutor-routing && npm run test:local-gguf && npm run test:local-model-api && npm run test:gemini-availability && npm run test:gemini-runtime && npm run test:gemini-status && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:languages && npm run test:math && npm run test:math-100 && npm run test:desktop && npm run test:request-security && npm run test:cors-policy && npm run test:speech-input && npm run test:recognition && npm run test:adaptive-learning && npm run test:math-agent && npm run test:adaptive-tutor && npm run test:notebook && npm run test:data-import && npm run test:api-security && npm run test:tutor-guard && npm run test:data-transfer && npm run test:agent-data && npm run test:knowledge-verification && npm run test:verification && npm run test:verification-differential && npm run test:verification-badge && npm run test:live-tutor-verification && npm run test:misconception && npm run test:recovery && npm run test:phase3 && npm run build",
+    "test:docx": "tsx tests/docxExtraction.test.ts",
+    "verify": "npm run lint && npm run test:core && npm run test:keyboard && npm run test:service-worker && npm run test:admin-api && npm run test:hygiene && npm run test:encoding && npm run test:client-secrets && npm run test:tutor && npm run test:tutor-modes && npm run test:tutor-languages && npm run test:pdf && npm run test:pdf-tutor && npm run test:knowledge-grounding && npm run test:tutor-conversation && npm run test:tutor-scoping && npm run test:user-stop && npm run test:math-sse-protocol && npm run test:ai-stream-endpoint && npm run test:ai-stream-client && npm run test:tutor-follow-up && npm run test:tutor-safety && npm run test:private-tutor-routing && npm run test:local-gguf && npm run test:local-model-api && npm run test:gemini-availability && npm run test:gemini-runtime && npm run test:gemini-status && npm run test:intelligence && npm run test:learning && npm run test:multilingual && npm run test:multilingual-input && npm run test:multilingual-adversarial && npm run test:multilingual-response && npm run test:languages && npm run test:math && npm run test:math-100 && npm run test:engine && npm run test:desktop && npm run test:request-security && npm run test:cors-policy && npm run test:speech-input && npm run test:recognition && npm run test:adaptive-learning && npm run test:math-agent && npm run test:adaptive-tutor && npm run test:notebook && npm run test:data-import && npm run test:api-security && npm run test:tutor-guard && npm run test:data-transfer && npm run test:agent-data && npm run test:knowledge-verification && npm run test:verification && npm run test:verification-differential && npm run test:verification-badge && npm run test:live-tutor-verification && npm run test:misconception && npm run test:recovery && npm run test:phase3 && npm run test:docx && npm run test:developer && npm run test:ollama-registry && npm run test:product-knowledge && npm run build && npm run test:server-bundle",
     "test:tutor": "tsx tests/tutorOrchestration.test.ts",
     "test:tutor-pipeline-contract": "tsx tests/tutorPipelineContract.test.ts",
     "test:pdf": "tsx tests/pdfExtraction.test.ts",
@@ -38,6 +39,7 @@
     "test:languages": "tsx tests/languageCoverage.test.ts",
     "test:multilingual-input": "tsx tests/multilingualInputUnderstanding.test.ts",
     "test:math": "tsx tests/mathEngineRegression.test.ts",
+    "test:engine": "npx tsx --test src/engine/tests/mathPipeline.test.ts",
     "dist:mac": "npm run build && npm run icons && electron-builder --mac dmg zip --publish never",
     "dist:linux": "npm run build && npm run icons && electron-builder --linux AppImage deb --publish never",
     "dist:all": "npm run build && npm run icons && electron-builder --win nsis portable --publish never && electron-builder --mac dmg zip --publish never && electron-builder --linux AppImage deb --publish never",
@@ -59,6 +61,11 @@
     "test:misconception": "tsx tests/misconception.test.ts",
     "test:recovery": "tsx tests/liveMisconceptionHints.test.ts",
     "test:tutor-conversation": "tsx tests/tutorConversationService.test.ts",
+    "test:tutor-scoping": "tsx tests/tutorStorageScoping.test.ts",
+    "test:user-stop": "tsx tests/userStop.test.ts",
+    "test:math-sse-protocol": "tsx tests/mathSseProtocol.test.ts",
+    "test:ai-stream-endpoint": "tsx tests/aiMathStreamEndpoint.test.ts",
+    "test:ai-stream-client": "tsx tests/aiStreamClient.test.ts",
     "test:gemini-status": "tsx tests/geminiStatus.test.ts",
     "test:request-security": "tsx tests/requestSecurity.test.ts",
     "test:speech-input": "tsx tests/speechInput.test.ts",
@@ -74,7 +81,17 @@
     "test:local-gguf": "tsx tests/localGgufRuntime.test.ts",
     "test:local-model-api": "tsx tests/localModelApi.test.ts",
     "test:data-import": "tsx tests/dataImport.test.ts",
-    "test:api-security": "tsx tests/apiSecurity.test.ts"
+    "test:api-security": "tsx tests/apiSecurity.test.ts",
+    "test:developer": "tsx tests/developerEndpoints.test.ts && tsx tests/developerDiagnostics.test.ts",
+    "test:ollama-registry": "tsx tests/ollamaRegistryStatus.test.ts",
+    "test:product-knowledge": "tsx tests/productKnowledge.test.ts",
+    "test:server-bundle": "node tests/serverBundleSelfContain.mjs",
+    "test:keyboard": "tsx tests/keyboardGuards.test.ts",
+    "test:service-worker": "tsx tests/serviceWorker.test.ts",
+    "test:admin-api": "tsx tests/adminApiPolicy.test.ts",
+    "test:hygiene": "tsx tests/repoHygiene.test.ts",
+    "test:encoding": "tsx tests/encodingIntegrity.test.ts",
+    "test:client-secrets": "tsx tests/clientSecretGuard.test.ts"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
@@ -127,8 +144,7 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
     ],
     "win": {
       "icon": "build/icons/calcora-icon.ico",

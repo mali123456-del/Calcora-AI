@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import * as XLSX from '@e965/xlsx';
 import { parseDelimitedDataset, type ParsedDataset } from './delimitedData';
 import { extractPdfText, type PdfDocumentLoader } from './pdfExtraction';
+import { extractDocxText as extractDocxTextShared } from './documentIntelligence';
 
 export const MAX_SYNC_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25 MB
 export const MAX_SYNC_CHUNKS = 2000;
@@ -192,24 +193,14 @@ export function formatSyncCitation(fileName: string, location: SyncSourceLocatio
 }
 
 /**
- * Extracts plain text from DOCX files by reading document XML tags from the zip container.
+ * Extracts plain text from DOCX files by reading document XML from the zip container.
+ *
+ * Delegates to the shared {@link extractDocxText} implementation so the two services
+ * cannot drift; the previous inline version regex-matched `<w:t>` against the
+ * compressed zip bytes and therefore always returned empty text.
  */
-export function extractDocxTextSync(buffer: Uint8Array): { text: string; warnings: string[] } {
-  const warnings: string[] = [];
-  try {
-    const raw = Buffer.from(buffer).toString('latin1');
-    const matches = raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-    if (matches && matches.length > 0) {
-      const text = matches
-        .map((m) => m.replace(/<[^>]+>/g, ''))
-        .join(' ')
-        .replace(/\s+/g, ' ');
-      return { text, warnings };
-    }
-  } catch (err) {
-    warnings.push(`DOCX extraction warning: ${err instanceof Error ? err.message : 'corrupted'}`);
-  }
-  return { text: '', warnings: ['Could not extract readable text from DOCX container.'] };
+export async function extractDocxText(buffer: Uint8Array): Promise<{ text: string; warnings: string[] }> {
+  return extractDocxTextShared(buffer);
 }
 
 /**
@@ -310,7 +301,7 @@ export class IntelligenceSyncService {
         warnings.push('PDF parsing skipped: loader unavailable.');
       }
     } else if (format === 'docx') {
-      const { text, warnings: docxWarnings } = extractDocxTextSync(buffer);
+      const { text, warnings: docxWarnings } = await extractDocxText(buffer);
       warnings.push(...docxWarnings);
       docChunks.push(...chunkTextWithMetadata(documentId, fileName, text));
     } else if (format === 'csv' || format === 'tsv' || format === 'spreadsheet') {

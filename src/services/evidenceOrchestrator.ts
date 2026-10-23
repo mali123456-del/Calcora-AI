@@ -11,10 +11,11 @@
 
 import { globalDocumentIntelligence, type RetrievalResult } from './documentIntelligence';
 import { globalWebResearcher, type WebResearchResult } from './webResearch';
-import { globalModelManager, type PrivacyMode } from './universalModelManager';
+import { globalModelManager, permitsExternalProcessing, type PrivacyMode } from './universalModelManager';
 import { calculateExpression } from '../engine/mathEngine';
 import { solveEquation } from '../engine/equationSolver';
 import { sanitizeQueryText } from '../utils/sanitizer';
+import { globalPrivacyEngine } from './privacyPolicyEngine';
 
 export interface EvidenceRequest {
   prompt: string;
@@ -123,8 +124,12 @@ export async function orchestrateEvidence(request: EvidenceRequest): Promise<Evi
     citations.push(res.citation);
   }
 
-  // 3. Web Research (only if allowed and privacy policy is NOT local-only)
-  if (request.allowWebResearch && request.privacyMode !== 'local-only' && (request.seedWebUrls?.length || 0) > 0) {
+  // Invalid or non-consented privacy values fail closed like local-only mode.
+  const externalProcessingAllowed = permitsExternalProcessing(request.privacyMode)
+    && globalPrivacyEngine.canSendExternalAIRequest();
+
+  // 3. Web Research (only if allowed and privacy policy explicitly permits external processing)
+  if (request.allowWebResearch && externalProcessingAllowed && (request.seedWebUrls?.length || 0) > 0) {
     const webResult: WebResearchResult = await globalWebResearcher.research(
       sanitizedPrompt,
       request.seedWebUrls,
@@ -142,8 +147,8 @@ export async function orchestrateEvidence(request: EvidenceRequest): Promise<Evi
       citations.push(source.citation);
     }
     if (webResult.warnings.length > 0) warnings.push(...webResult.warnings);
-  } else if (request.allowWebResearch && request.privacyMode === 'local-only') {
-    warnings.push('Web research was requested but suppressed because privacy mode is set to "local-only".');
+  } else if (request.allowWebResearch && !externalProcessingAllowed) {
+    warnings.push('Web research was requested but suppressed because privacy mode does not explicitly allow external processing.');
   }
 
   // 4. Construct response grounded in evidence

@@ -29,6 +29,7 @@ import {
   FunctionSquare,
   Layers,
   LayoutDashboard,
+  Keyboard,
   Monitor,
   Moon,
   Percent,
@@ -56,6 +57,7 @@ interface HeaderProps {
   onOpenVerification: () => void;
   onOpenWorkspaces?: () => void;
   onOpenCommandPalette?: () => void;
+  onOpenKeyboardShortcuts?: () => void;
 }
 
 type TabDef = { id: ActiveTab; label: string; icon: React.ElementType };
@@ -143,6 +145,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenVerification,
   onOpenWorkspaces,
   onOpenCommandPalette,
+  onOpenKeyboardShortcuts,
 }) => (
   <header
     className="sticky top-0 z-30 w-full border-b cc-divider backdrop-blur-md transition-colors"
@@ -178,6 +181,20 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onOpenKeyboardShortcuts && (
+            <button
+              id="btn-open-keyboard-shortcuts"
+              type="button"
+              onClick={onOpenKeyboardShortcuts}
+              className="cc-btn"
+              title="Open keyboard shortcuts (?)"
+              aria-label="Open keyboard shortcuts"
+            >
+              <Keyboard aria-hidden="true" />
+              <span className="hidden md:inline">Shortcuts</span>
+              <kbd className="hidden xl:inline cc-faint font-mono text-[11px] font-semibold">?</kbd>
+            </button>
+          )}
           {onOpenCommandPalette && (
             <button
               id="btn-open-command-palette"

@@ -30,7 +30,7 @@ Status vocabulary: PASS · PARTIAL · FAIL · BLOCKED · NOT VERIFIED · NOT IMP
 | Research Assistant | **NOT IMPLEMENTED** | no external source retrieval |
 | Document Explainer | **NOT IMPLEMENTED** | extraction exists, tutoring blocked on non-loopback |
 | Tool-calling agent | **NOT IMPLEMENTED** | 1 verified tool, no planning loop |
-| Streaming / stop / regenerate | **NOT VERIFIED** | not exercised by the packaged gate |
+| Streaming / stop / regenerate | **PASS** | SSE endpoint `/api/ai/math/stream` + client `askAIMathAssistantStream` + panel streaming bubble + Regenerate; suites `test:math-sse-protocol`, `test:ai-stream-endpoint`, `test:ai-stream-client`, `test:user-stop`. Deltas are provisional; only the final `result` frame (same verification pipeline as the JSON endpoint) is authoritative. Cloud token streaming is contract-tested (offline/result-path + parity), not exercised against a live Gemini key |
 
 ## 3. Knowledge / RAG
 
@@ -73,6 +73,11 @@ states so per language rather than in aggregate.
 |---|---|---|
 | Calculation + verification trace | **PASS** | reproducible id, verified in packaged CDP run |
 | Structured JSON export | **PASS** | `DeveloperPanel` |
+| API Playground (real allowlist, validated bodies, cancel, measured duration, bounded sanitized history) | **PASS** | `developerEndpoints.ts`, `tests/developerEndpoints.test.ts` |
+| Provider/model inspector (registry states, masked keys, honest untested labels) | **PASS** | `DeveloperPanel.tsx` Providers tab over `/api/models/registry` + `/api/ai/local-models` |
+| Diagnostics (bounded capture, severity/subsystem filters, redacted export) | **PASS** | `developerDiagnostics.ts`, `tests/developerDiagnostics.test.ts` |
+| Developer settings (clamped retention/bound, confirm on reset) | **PASS** | `DeveloperPanel.tsx` Settings tab |
+| Cancellation on panel unmount / tab switch + stale-generation guard | **PASS** | `AIAssistantPanel.tsx` cleanup effect and generation guard |
 | Capability registry | **PASS** | 20 entries, 9 assertions |
 | Typecheck | **PASS** | 0 issues |
 | Regression | **PASS** | 67/67 |
@@ -98,3 +103,18 @@ states so per language rather than in aggregate.
 | Duplicate copies retired | **PASS** | 6,148.4 MB removed |
 | Primary model retirement | **BLOCKED** | sole generative path |
 | Fine-tuning / LoRA / distillation | **NOT IMPLEMENTED** | no run performed |
+## 9. Batch 6 (dashboard/navigation, hybrid local AI, tutor product knowledge)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Home dashboard (hero, quick-ask -> Tutor, quick tiles) | **PASS** | `HomeDashboardPanel.tsx`; browser smoke: quick-ask prefilled Tutor, verified answer returned |
+| Recent Activity from real data only | **PASS** | real `calc.history` + real `loadTutorStats()`; honest empty state; no fabricated metrics |
+| System Status probes (measured, honest) | **PASS** | `/api/health` 4 s timeout, service-worker controller, localStorage write probe, `/api/ai/local-models`; browser smoke: API Online / SW Active / Local Storage Healthy / honest cloud pointer to Developer > Providers |
+| Desktop sidebar navigation | **PASS** | `AppSidebar.tsx` lg+ only; 18 items all map to real rendered workspaces; `aria-current`; Online/Offline footer via browser connectivity events; header remains the compact nav |
+| Ollama status discovery (GET /api/tags, 2.5 s bounded) | **PASS** | `universalModelManager.probeOllamaStatus()` + `tests/ollamaRegistryStatus.test.ts` (reachable / ECONNREFUSED / HTTP 503) |
+| Ollama chat completion through the model manager | **NOT IMPLEMENTED** | discovery labeled status-only in the diagnostic; no completion path claimed |
+| Tutor product knowledge (versioned, curated) | **PASS** | `src/knowledge/productKnowledge.ts` (v2, 9 evidence-backed facts) injected through `buildTutorGroundingContext`; `tests/productKnowledge.test.ts` re-derives 115 languages, RTL codes, 6-endpoint allowlist, 4 verification states and requires every cited file to exist |
+| Live cloud provider runtime test | **BLOCKED** | no authorized API key available; nothing fabricated |
+| Windows installer (NSIS + portable, `dist:win`) | **PASS** | `release\Calcora-AI-1.0.0-x64-setup.exe` 124.1 MB, `release\Calcora-AI-1.0.0-x64-portable.exe` 123.8 MB, EXIT=0 |
+| Packaged-app first launch + embedded backend health | **PASS** | unpacked launch smoke: calculator window held 12 s+, `/api/health` `{"status":"ok"}` from the embedded backend; fixed by the self-contained server bundle (`tests/serverBundleSelfContain.mjs`) after the junction/node_modules walk failure |
+| Code signing of installer artifacts | **NOT VERIFIED** | signtool steps ran without a certificate; artifacts remain unsigned |

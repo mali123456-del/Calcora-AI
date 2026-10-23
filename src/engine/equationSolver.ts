@@ -200,9 +200,12 @@ function parsePolynomialSide(side: string, variable: string): Record<number, num
       continue;
     }
 
-    // Constant number: e.g. 5, 12.3
-    const num = parseFloat(term);
-    if (!Number.isNaN(num)) {
+    // Constant number: e.g. 5, 12.3, 1e3. The term must be *entirely* numeric:
+    // parseFloat alone would silently accept '1/x' as 1 or '2(x+1)' as 2 and
+    // produce a confident but wrong solution, so reject any trailing residue
+    // instead of truncating it.
+    if (/^\d*\.?\d+(?:e[+-]?\d+)?$/i.test(term)) {
+      const num = parseFloat(term);
       coeffs[0] = (coeffs[0] || 0) + sign * num;
       continue;
     }
